@@ -26,6 +26,21 @@ Cargo.lock
 *.dylib
 *.dll
 *.exe
+*.res  # Windows resource files
+*.rc   # Resource script files
+
+# Cross-compilation artifacts
+*.mingw
+*.a
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Distribution files
+/dist/
+/installer/
 
 # Backup files
 *~
