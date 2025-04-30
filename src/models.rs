@@ -14,7 +14,7 @@ pub struct Exercise {
     pub technique_video: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ExerciseType {
     Compound,
@@ -47,12 +47,14 @@ pub struct Joint {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub angle: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub intitial_angle: Option<u32>,
+    pub direction: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub final_angle: Option<u32>,
+    pub angle_initial: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub angle_final: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ResistanceProfile {
     Ascending,
@@ -61,7 +63,7 @@ pub enum ResistanceProfile {
     Constant,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum PlaneOfMotion {
     Sagittal,
