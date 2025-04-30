@@ -318,7 +318,8 @@ impl HypertrophyApp {
         ui.horizontal(|ui| {
             ui.label("Primary Muscle:");
             egui::ComboBox::from_label("")
-                .selected_text(&self.exercise.target_muscles.muscle_name)
+                .selected_text(RichText::new(&self.exercise.target_muscles.muscle_name).size(18.0))
+                .width(150.0)
                 .show_ui(ui, |ui| {
                     for muscle in self.muscle_divisions.keys() {
                         if ui
@@ -398,7 +399,8 @@ impl HypertrophyApp {
                 ui.horizontal(|ui| {
                     ui.label("Name:");
                     egui::ComboBox::from_id_source(format!("joint_name_combo_{}", i))
-                        .selected_text(&joint.name)
+                        .selected_text(RichText::new(&joint.name).size(18.0))
+                        .width(150.0)
                         .show_ui(ui, |ui| {
                             for joint_name in &self.joint_names {
                                 if ui.selectable_label(joint.name == *joint_name, joint_name).clicked() {
@@ -408,16 +410,41 @@ impl HypertrophyApp {
                         });
                 });
 
-                ui.checkbox(&mut joint.dynamic, "Dynamic Movement");
+                ui.checkbox(&mut joint.dynamic, "Dynamic Movement").changed().then(|| {
+                    // When dynamic state changes, reset the appropriate fields
+                    if joint.dynamic {
+                        // If now dynamic, clear the static angle and set initial defaults for dynamic fields
+                        joint.angle = None;
+                        if joint.angle_initial.is_none() {
+                            joint.angle_initial = Some(0);
+                        }
+                        if joint.angle_final.is_none() {
+                            joint.angle_final = Some(0);
+                        }
+                    } else {
+                        // If now static, clear dynamic fields and set default static angle
+                        joint.direction = None;
+                        joint.angle_initial = None;
+                        joint.angle_final = None;
+                        if joint.angle.is_none() {
+                            joint.angle = Some(0);
+                        }
+                    }
+                });
 
+                // Then show the appropriate UI elements based on the joint's current state
                 if joint.dynamic {
                     ui.horizontal(|ui| {
                         ui.label("Direction:");
-                        // Create a temporary String outside the borrow
-                        let mut temp_string = String::new();
-                        // Now use a reference to that string in unwrap_or
-                        let dir_ref = joint.direction.as_mut().unwrap_or(&mut temp_string);
-                        ui.text_edit_singleline(dir_ref);
+                        
+                        // Create a placeholder string to display/edit
+                        let mut direction_text = joint.direction.clone().unwrap_or_default();
+                        
+                        // Use the string for the text edit
+                        if ui.text_edit_singleline(&mut direction_text).changed() {
+                            // When changed, update the joint's direction field
+                            joint.direction = Some(direction_text);
+                        }
                     });
                     
                     ui.horizontal(|ui| {
