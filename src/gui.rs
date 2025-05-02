@@ -4,10 +4,6 @@ use egui::{Color32, RichText, Ui, InnerResponse};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-trait UiExt {
-    fn horizontal_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
-}
-
 impl UiExt for Ui {
     fn horizontal_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         self.with_layout(
@@ -37,7 +33,6 @@ enum Tab {
 
 impl Default for HypertrophyApp {
     fn default() -> Self {
-        // Create default exercise
         let exercise = Exercise {
             name: String::new(),
             id: 0,
@@ -54,7 +49,7 @@ impl Default for HypertrophyApp {
             technique_video: String::new(),
         };
 
-        // Predefined muscle divisions for common muscles
+        // Predefined muscle divisions
         let mut muscle_divisions = HashMap::new();
         muscle_divisions.insert(
             "chest".to_string(),
@@ -115,7 +110,7 @@ impl Default for HypertrophyApp {
             ],
         );
 
-        // Common joint names
+        // Joint names
         let joint_names = vec![
             "shoulder".to_string(),
             "elbow".to_string(),
@@ -148,7 +143,6 @@ impl eframe::App for HypertrophyApp {
         ctx.set_style(style);
         
         egui::CentralPanel::default().show(ctx, |ui| {
-            // App title with larger, centered text
             ui.vertical_centered(|ui| {
                 ui.add_space(5.0);
                 ui.heading(RichText::new("Hypertrophy Archive").size(32.0).color(Color32::from_rgb(120, 200, 255)));
@@ -157,9 +151,8 @@ impl eframe::App for HypertrophyApp {
 
             ui.add_space(-475.0);
 
-            // Tab bar with larger, more prominent buttons
             ui.horizontal_centered(|ui| {
-                ui.add_space(20.0); // Add space for centering
+                ui.add_space(20.0);
                 let button_size = egui::vec2(140.0, 40.0);
                 
                 if ui.add_sized(button_size, self.tab_button_styled("Basic Info", Tab::BasicInfo)).clicked() {
@@ -177,18 +170,16 @@ impl eframe::App for HypertrophyApp {
                 if ui.add_sized(button_size, self.tab_button_styled("Preview", Tab::Preview)).clicked() {
                     self.current_tab = Tab::Preview;
                 }
-                ui.add_space(20.0); // Add space for centering
+                ui.add_space(20.0);
             });
 
             ui.add_space(15.0);
             ui.separator();
             ui.add_space(15.0);
 
-            // Content area with scrolling
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    // Content area with some padding for better spacing
                     egui::Frame::none()
                         .inner_margin(egui::style::Margin::symmetric(40.0, 10.0))
                         .show(ui, |ui| {
@@ -330,7 +321,6 @@ impl HypertrophyApp {
                             .clicked()
                         {
                             self.exercise.target_muscles.muscle_name = muscle.clone();
-                            // Clear existing divisions when changing muscle
                             self.exercise.target_muscles.muscle_divisions.clear();
                         }
                     }
@@ -348,10 +338,8 @@ impl HypertrophyApp {
                         .any(|md| md.name == *division && md.active);
                     
                     if ui.checkbox(&mut is_active, division).changed() {
-                        // Remove existing division if present
                         self.exercise.target_muscles.muscle_divisions.retain(|md| md.name != *division);
                         
-                        // Add division with updated active state
                         if is_active {
                             self.exercise.target_muscles.muscle_divisions.push(MuscleDivision {
                                 name: division.clone(),
@@ -383,7 +371,6 @@ impl HypertrophyApp {
         ui.heading("Joints Involved");
         ui.add_space(10.0);
 
-        // Display existing joints
         let mut joints_to_remove = None;
         for (i, joint) in self.exercise.joints_involved.joints.iter_mut().enumerate() {
             ui.group(|ui| {
@@ -411,9 +398,7 @@ impl HypertrophyApp {
                 });
 
                 ui.checkbox(&mut joint.dynamic, "Dynamic Movement").changed().then(|| {
-                    // When dynamic state changes, reset the appropriate fields
                     if joint.dynamic {
-                        // If now dynamic, clear the static angle and set initial defaults for dynamic fields
                         joint.angle = None;
                         if joint.angle_initial.is_none() {
                             joint.angle_initial = Some(0);
@@ -422,7 +407,6 @@ impl HypertrophyApp {
                             joint.angle_final = Some(0);
                         }
                     } else {
-                        // If now static, clear dynamic fields and set default static angle
                         joint.direction = None;
                         joint.angle_initial = None;
                         joint.angle_final = None;
@@ -432,17 +416,13 @@ impl HypertrophyApp {
                     }
                 });
 
-                // Then show the appropriate UI elements based on the joint's current state
                 if joint.dynamic {
                     ui.horizontal(|ui| {
                         ui.label("Direction:");
                         
-                        // Create a placeholder string to display/edit
                         let mut direction_text = joint.direction.clone().unwrap_or_default();
                         
-                        // Use the string for the text edit
                         if ui.text_edit_singleline(&mut direction_text).changed() {
-                            // When changed, update the joint's direction field
                             joint.direction = Some(direction_text);
                         }
                     });
@@ -475,14 +455,12 @@ impl HypertrophyApp {
             ui.add_space(5.0);
         }
 
-        // Remove joint if requested
         if let Some(index) = joints_to_remove {
             self.exercise.joints_involved.joints.remove(index);
         }
 
         // Add new joint button
         if ui.button("Add Joint").clicked() {
-            // Generate a unique ID for the joint if needed
             let joint_id = self.exercise.joints_involved.joints.len();
             
             self.exercise.joints_involved.joints.push(Joint {
@@ -620,7 +598,6 @@ impl HypertrophyApp {
         use std::fs::{self, File};
         use std::io::Write;
         
-        // Create a sanitized filename
         let sanitized = filename.trim().replace(" ", "_").to_lowercase();
         let filename = if sanitized.is_empty() { "unnamed_exercise".to_string() } else { sanitized };
         
@@ -635,7 +612,6 @@ impl HypertrophyApp {
         // Create file path
         let file_path = self.data_dir.join(format!("{}.json", filename));
         
-        // Serialize exercise to JSON
         match serde_json::to_string_pretty(&self.exercise) {
             Ok(json) => {
                 // Write to file
