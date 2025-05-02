@@ -16,6 +16,7 @@ This is an app is made to organize a list of, in theory, any exercise you would 
 - The goal is to cover every joint action from three types of resistance profiles. That is how it is organized. For example, I will not be listing every way to do one exercise (dumbbell preacher curls vs. machine preacher curls), it will instead be organized via target muscle, with the characteristics of the joints involved, resistance profile, etc. and how that will bias some vs. other muscles. For example, a 45 degree preacher curl with a descending resistance profile (hardest at the stretched position) will primarily target the biceps, whereas a preacher curl with an asceding resistance profile will primarily target the brachialis and brachioradidalis muscles. These discrepancies will be properly handled.
 
 ## Example Entry
+```
 {
 	"name": "chest_press",
 	"id": 0,
@@ -55,3 +56,4 @@ This is an app is made to organize a list of, in theory, any exercise you would 
 	"tips": "Keep those shoulders tucked!",
 	"technique_video": "https://youtube.com/shorts/hWbUlkb5Ms4?si=P89i2PXyGlX_q7XE"
 }
+```
