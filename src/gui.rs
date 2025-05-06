@@ -70,9 +70,10 @@ impl Default for HypertrophyApp {
             vec![
                 "upper trapezius".to_string(),
                 "middle trapezius".to_string(),
-                "lower trapezius".to_string(),
                 "rhomboids".to_string(),
-                "latissimus dorsi".to_string(),
+                "upper lats".to_string(),
+                "lower lats".to_string(),
+                "teres major".to_string(),
             ],
         );
         muscle_divisions.insert(
@@ -86,8 +87,9 @@ impl Default for HypertrophyApp {
         muscle_divisions.insert(
             "biceps".to_string(),
             vec![
-                "long head".to_string(),
-                "short head".to_string(),
+                "biceps brachii".to_string(),
+                "supinator".to_string(),
+                "brachialis".to_string(),
             ],
         );
         muscle_divisions.insert(
@@ -96,6 +98,15 @@ impl Default for HypertrophyApp {
                 "long head".to_string(),
                 "lateral head".to_string(),
                 "medial head".to_string(),
+            ],
+        );
+        muscle_divisions.insert(
+            "forearms".to_string(),
+            vec![
+                "brachialis".to_string(),
+                "brachioradialis".to_string(),
+                "flexor digitorum".to_string(),
+                "pronator teres".to_string(),
             ],
         );
         muscle_divisions.insert(
@@ -113,6 +124,41 @@ impl Default for HypertrophyApp {
                 "biceps femoris".to_string(),
                 "semitendinosus".to_string(),
                 "semimembranosus".to_string(),
+            ],
+        );
+        muscle_divisions.insert(
+            "glutes".to_string(),
+            vec![
+                "gluteus maximus".to_string(),
+                "gluteus medius".to_string(),
+            ],
+        );
+        muscle_divisions.insert(
+            "adductors".to_string(),
+            vec![
+                "adductor longus".to_string(),
+            ],
+        );
+        muscle_divisions.insert(
+            "calves".to_string(),
+            vec![
+                "gastrocnemius".to_string(),
+                "soleus".to_string(),
+                "tibialis anterior".to_string(),
+            ],
+        );
+        muscle_divisions.insert(
+            "erectors".to_string(),
+            vec![
+                "erector spinae".to_string(),
+
+            ],
+        );
+        muscle_divisions.insert(
+            "abs".to_string(),
+            vec![
+                "rectus abdominis".to_string(),
+                "obliques".to_string(),
             ],
         );
 
