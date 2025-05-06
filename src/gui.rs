@@ -26,6 +26,7 @@ pub struct HypertrophyApp {
     joint_names: Vec<String>,
     current_tab: Tab,
     show_save_dialog: bool,
+    save_filename: String,
 }
 
 enum Tab {
@@ -134,6 +135,7 @@ impl Default for HypertrophyApp {
             joint_names,
             current_tab: Tab::BasicInfo,
             show_save_dialog: false,
+            save_filename: String::new(),
         }
     }
 }
@@ -578,22 +580,28 @@ impl HypertrophyApp {
     }
 
     fn show_save_dialog(&mut self, ctx: &egui::Context) {
+        if self.save_filename.is_empty() {
+            self.save_filename = self.exercise.name.clone();
+        }
+        
         egui::Window::new("Save Exercise")
             .fixed_size([300.0, 100.0])
             .show(ctx, |ui| {
                 ui.label("Enter a filename to save the exercise:");
                 
-                let mut filename = self.exercise.name.clone();
-                ui.text_edit_singleline(&mut filename);
+                ui.text_edit_singleline(&mut self.save_filename);
                 
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
                         self.show_save_dialog = false;
+                        self.save_filename = String::new();
                     }
                     
                     if ui.button("Save").clicked() {
-                        self.save_exercise(&filename);
+                        let filename_to_save = self.save_filename.clone();
+                        self.save_exercise(&filename_to_save);
                         self.show_save_dialog = false;
+                        self.save_filename = String::new();
                     }
                 });
             });
