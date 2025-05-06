@@ -58,119 +58,119 @@ impl Default for HypertrophyApp {
         // Predefined muscle divisions
         let mut muscle_divisions = HashMap::new();
         muscle_divisions.insert(
-            "chest".to_string(),
+            "Chest".to_string(),
             vec![
-                "sternocostal".to_string(),
-                "clavicular".to_string(),
-                "abdominal".to_string(),
+                "Sternocostal".to_string(),
+                "Clavicular".to_string(),
+                "Abdominal".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "back".to_string(),
+            "Back".to_string(),
             vec![
-                "upper trapezius".to_string(),
-                "middle trapezius".to_string(),
-                "rhomboids".to_string(),
-                "upper lats".to_string(),
-                "lower lats".to_string(),
-                "teres major".to_string(),
+                "Upper Trapezius".to_string(),
+                "Middle Trapezius".to_string(),
+                "Rhomboids".to_string(),
+                "Upper Lats".to_string(),
+                "Lower Lats".to_string(),
+                "Teres Major".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "shoulders".to_string(),
+            "Shoulders".to_string(),
             vec![
-                "anterior deltoid".to_string(),
-                "lateral deltoid".to_string(),
-                "posterior deltoid".to_string(),
+                "Anterior Deltoid".to_string(),
+                "Lateral Deltoid".to_string(),
+                "Posterior Deltoid".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "biceps".to_string(),
+            "Elbow Flexors".to_string(),
             vec![
-                "biceps brachii".to_string(),
-                "supinator".to_string(),
-                "brachialis".to_string(),
+                "Biceps Brachii".to_string(),
+                "Brachioradialis".to_string(),
+                "Brachialis".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "triceps".to_string(),
+            "Triceps".to_string(),
             vec![
-                "long head".to_string(),
-                "lateral head".to_string(),
-                "medial head".to_string(),
+                "Long Head".to_string(),
+                "Lateral Head".to_string(),
+                "Medial Head".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "forearms".to_string(),
+            "Forearms".to_string(),
             vec![
-                "brachialis".to_string(),
-                "brachioradialis".to_string(),
-                "flexor digitorum".to_string(),
-                "pronator teres".to_string(),
+                "Wrist Flexors".to_string(),
+                "Wrist Extensors".to_string(),
+                "Finger Flexors".to_string(),
+                "Finger Extensors".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "quadriceps".to_string(),
+            "Quadriceps".to_string(),
             vec![
-                "rectus femoris".to_string(),
-                "vastus lateralis".to_string(),
-                "vastus medialis".to_string(),
-                "vastus intermedius".to_string(),
+                "Rectus Femoris".to_string(),
+                "Vastus Lateralis".to_string(),
+                "Vastus Medialis".to_string(),
+                "Vastus Intermedius".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "hamstrings".to_string(),
+            "Hamstrings".to_string(),
             vec![
-                "biceps femoris".to_string(),
-                "semitendinosus".to_string(),
-                "semimembranosus".to_string(),
+                "Biceps Femoris".to_string(),
+                "Semitendinosus".to_string(),
+                "Semimembranosus".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "glutes".to_string(),
+            "Glutes".to_string(),
             vec![
-                "gluteus maximus".to_string(),
-                "gluteus medius".to_string(),
+                "Gluteus Maximus".to_string(),
+                "Gluteus Medius".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "adductors".to_string(),
+            "Adductors".to_string(),
             vec![
-                "adductor longus".to_string(),
+                "Adductor Longus".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "calves".to_string(),
+            "Calves".to_string(),
             vec![
-                "gastrocnemius".to_string(),
-                "soleus".to_string(),
-                "tibialis anterior".to_string(),
+                "Gastrocnemius".to_string(),
+                "Soleus".to_string(),
+                "Tibialis Anterior".to_string(),
             ],
         );
         muscle_divisions.insert(
-            "erectors".to_string(),
+            "Erectors".to_string(),
             vec![
-                "erector spinae".to_string(),
+                "Erector Spinae".to_string(),
 
             ],
         );
         muscle_divisions.insert(
-            "abs".to_string(),
+            "Abs".to_string(),
             vec![
-                "rectus abdominis".to_string(),
-                "obliques".to_string(),
+                "Rectus Abdominis".to_string(),
+                "Obliques".to_string(),
             ],
         );
 
         // Joint names
         let joint_names = vec![
-            "shoulder".to_string(),
-            "elbow".to_string(),
-            "wrist".to_string(),
-            "hip".to_string(),
-            "knee".to_string(),
-            "ankle".to_string(),
-            "spine".to_string(),
+            "Shoulder".to_string(),
+            "Elbow".to_string(),
+            "Wrist".to_string(),
+            "Hip".to_string(),
+            "Knee".to_string(),
+            "Ankle".to_string(),
+            "Spine".to_string(),
         ];
 
         Self {
@@ -668,8 +668,25 @@ impl HypertrophyApp {
             }
         }
         
-        // Create file path
-        let file_path = self.data_dir.join(format!("{}.json", filename));
+        // Get the primary muscle and create a subfolder for it
+        let muscle_folder = if !self.exercise.target_muscles.muscle_name.is_empty() {
+            // Convert to lowercase and replace spaces with underscores for folder name
+            self.exercise.target_muscles.muscle_name.to_lowercase().replace(" ", "_")
+        } else {
+            "uncategorized".to_string()
+        };
+        
+        // Create the muscle-specific subdirectory
+        let muscle_dir = self.data_dir.join(&muscle_folder);
+        if !muscle_dir.exists() {
+            if let Err(e) = fs::create_dir_all(&muscle_dir) {
+                self.status_message = format!("Error creating muscle directory: {}", e);
+                return;
+            }
+        }
+        
+        // Create file path in the muscle subfolder
+        let file_path = muscle_dir.join(format!("{}.json", filename));
         
         match serde_json::to_string_pretty(&self.exercise) {
             Ok(json) => {
