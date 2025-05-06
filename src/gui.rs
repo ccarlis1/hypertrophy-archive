@@ -4,6 +4,11 @@ use egui::{Color32, RichText, Ui, InnerResponse};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+// Add this trait definition before the implementation
+trait UiExt {
+    fn horizontal_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
+}
+
 impl UiExt for Ui {
     fn horizontal_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         self.with_layout(
