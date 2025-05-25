@@ -6,7 +6,8 @@ pub struct Exercise {
     pub id: u32,
     pub r#type: ExerciseType,
     pub description: String,
-    pub target_muscles: TargetMuscles,
+    #[serde(rename = "target_muscles")]
+    pub target_muscle_groups: Vec<TargetMuscles>,
     pub joints_involved: JointsInvolved,
     pub resistance_profile: ResistanceProfile,
     pub plane_of_motion: PlaneOfMotion,
@@ -21,17 +22,38 @@ pub enum ExerciseType {
     Isolation,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TargetMuscles {
     pub muscle_name: String,
+    pub primary: bool,
     #[serde(rename = "muscle_division")]
     pub muscle_divisions: Vec<MuscleDivision>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Copy)]
+pub enum BiasLevel {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "light")]
+    Light,
+    #[serde(rename = "moderate")]
+    Moderate,
+    #[serde(rename = "strong")]
+    Strong,
+}
+
+impl Default for BiasLevel {
+    fn default() -> Self {
+        BiasLevel::None
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MuscleDivision {
     pub name: String,
     pub active: bool,
+    #[serde(default)]
+    pub bias: BiasLevel,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

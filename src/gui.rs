@@ -4,7 +4,6 @@ use egui::{Color32, RichText, Ui, InnerResponse};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-// Add this trait definition before the implementation
 trait UiExt {
     fn horizontal_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
 }
@@ -27,6 +26,7 @@ pub struct HypertrophyApp {
     current_tab: Tab,
     show_save_dialog: bool,
     save_filename: String,
+    new_muscle_selection: Option<String>,
 }
 
 enum Tab {
@@ -44,10 +44,7 @@ impl Default for HypertrophyApp {
             id: 0,
             r#type: ExerciseType::Compound,
             description: String::new(),
-            target_muscles: TargetMuscles {
-                muscle_name: String::new(),
-                muscle_divisions: Vec::new(),
-            },
+            target_muscle_groups: Vec::new(),
             joints_involved: JointsInvolved { joints: Vec::new() },
             resistance_profile: ResistanceProfile::Constant,
             plane_of_motion: PlaneOfMotion::Transverse,
@@ -182,6 +179,7 @@ impl Default for HypertrophyApp {
             current_tab: Tab::BasicInfo,
             show_save_dialog: false,
             save_filename: String::new(),
+            new_muscle_selection: None,
         }
     }
 }
@@ -359,55 +357,152 @@ impl HypertrophyApp {
         ui.heading("Target Muscles");
         ui.add_space(10.0);
 
-        ui.horizontal(|ui| {
-            ui.label("Primary Muscle:");
-            egui::ComboBox::from_label("")
-                .selected_text(RichText::new(&self.exercise.target_muscles.muscle_name).size(18.0))
-                .width(150.0)
-                .show_ui(ui, |ui| {
-                    for muscle in self.muscle_divisions.keys() {
-                        if ui
-                            .selectable_label(
-                                self.exercise.target_muscles.muscle_name == *muscle,
-                                muscle,
-                            )
-                            .clicked()
-                        {
-                            self.exercise.target_muscles.muscle_name = muscle.clone();
-                            self.exercise.target_muscles.muscle_divisions.clear();
-                        }
-                    }
-                });
-        });
-
-        if !self.exercise.target_muscles.muscle_name.is_empty() {
-            ui.add_space(5.0);
-            ui.label("Muscle Divisions:");
+        // Display current muscle groups
+        if !self.exercise.target_muscle_groups.is_empty() {
+            ui.label("Current Target Muscles:");
             
-            if let Some(divisions) = self.muscle_divisions.get(&self.exercise.target_muscles.muscle_name) {
-                for division in divisions {
-                    let mut is_active = self.exercise.target_muscles.muscle_divisions
-                        .iter()
-                        .any(|md| md.name == *division && md.active);
-                    
-                    if ui.checkbox(&mut is_active, division).changed() {
-                        self.exercise.target_muscles.muscle_divisions.retain(|md| md.name != *division);
-                        
-                        if is_active {
-                            self.exercise.target_muscles.muscle_divisions.push(MuscleDivision {
-                                name: division.clone(),
-                                active: true,
-                            });
-                        } else {
-                            self.exercise.target_muscles.muscle_divisions.push(MuscleDivision {
-                                name: division.clone(),
-                                active: false,
-                            });
+            let mut muscles_to_remove = None;
+            let mut new_primary_index = None;
+            
+            for (i, target_muscle) in self.exercise.target_muscle_groups.iter_mut().enumerate() {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        // Primary checkbox
+                        let mut is_primary = target_muscle.primary;
+                        if ui.checkbox(&mut is_primary, "Primary").changed() {
+                            if is_primary {
+                                // Instead of directly changing other muscles, just note which one should be primary
+                                new_primary_index = Some(i);
+                            } else if target_muscle.primary {
+                                // If un-checking the current primary, just update this one
+                                target_muscle.primary = false;
+                            }
                         }
-                    }
+                        
+                        ui.label(&target_muscle.muscle_name);
+                        
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
+                            if ui.button("Remove").clicked() {
+                                muscles_to_remove = Some(i);
+                            }
+                        });
+                    });
+                    
+                    // Show divisions for this muscle
+                    ui.indent("divisions", |ui| {
+                        if let Some(divisions) = self.muscle_divisions.get(&target_muscle.muscle_name) {
+                            for division in divisions {
+                                let division_entry = target_muscle.muscle_divisions
+                                    .iter()
+                                    .find(|md| md.name == *division);
+                                
+                                let mut is_active = division_entry.map_or(false, |md| md.active);
+                                let mut bias_level = division_entry.map_or(BiasLevel::None, |md| md.bias.clone());
+                                
+                                ui.horizontal(|ui| {
+                                    if ui.checkbox(&mut is_active, division).changed() {
+                                        target_muscle.muscle_divisions.retain(|md| md.name != *division);
+                                        
+                                        target_muscle.muscle_divisions.push(MuscleDivision {
+                                            name: division.clone(),
+                                            active: is_active,
+                                            bias: bias_level,
+                                        });
+                                    }
+                                    
+                                    if is_active {
+                                        ui.add_space(10.0);
+                                        ui.label("Bias:");
+                                        if ui.radio_value(&mut bias_level, BiasLevel::None, "None").clicked()
+                                            || ui.radio_value(&mut bias_level, BiasLevel::Light, "Light").clicked()
+                                            || ui.radio_value(&mut bias_level, BiasLevel::Moderate, "Moderate").clicked()
+                                            || ui.radio_value(&mut bias_level, BiasLevel::Strong, "Strong").clicked() 
+                                        {
+                                            target_muscle.muscle_divisions.retain(|md| md.name != *division);
+                                            
+                                            target_muscle.muscle_divisions.push(MuscleDivision {
+                                                name: division.clone(),
+                                                active: is_active,
+                                                bias: bias_level,
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+                ui.add_space(5.0);
+            }
+            
+            // Apply the primary change after the iteration is complete
+            if let Some(primary_idx) = new_primary_index {
+                // Set all to false first
+                for muscle in &mut self.exercise.target_muscle_groups {
+                    muscle.primary = false;
+                }
+                // Then set the selected one to true
+                if let Some(muscle) = self.exercise.target_muscle_groups.get_mut(primary_idx) {
+                    muscle.primary = true;
                 }
             }
+            
+            if let Some(index) = muscles_to_remove {
+                self.exercise.target_muscle_groups.remove(index);
+            }
         }
+        
+        // Add new muscle group section
+        ui.group(|ui| {
+            ui.label("Add Muscle Group:");
+            
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_label("")
+                    .selected_text(self.new_muscle_selection.as_deref().unwrap_or("Select muscle..."))
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for muscle in self.muscle_divisions.keys() {
+                            if ui.selectable_label(
+                                self.new_muscle_selection.as_deref() == Some(muscle), 
+                                muscle
+                            ).clicked() {
+                                self.new_muscle_selection = Some(muscle.clone());
+                            }
+                        }
+                    });
+                    
+                if ui.button("Add Muscle").clicked() {
+                    if let Some(muscle) = self.new_muscle_selection.clone() {
+                        // Check if this is the first muscle (make it primary)
+                        let is_primary = self.exercise.target_muscle_groups.is_empty();
+                        
+                        // Create a new TargetMuscles with empty divisions
+                        let mut new_target = TargetMuscles {
+                            muscle_name: muscle.clone(),
+                            primary: is_primary,
+                            muscle_divisions: Vec::new(),
+                        };
+                        
+                        // Add default division entries (all inactive)
+                        if let Some(divisions) = self.muscle_divisions.get(&muscle) {
+                            for division in divisions {
+                                new_target.muscle_divisions.push(MuscleDivision {
+                                    name: division.clone(),
+                                    active: false,
+                                    bias: BiasLevel::None,
+                                });
+                            }
+                        }
+                        
+                        // Add to the exercise
+                        self.exercise.target_muscle_groups.push(new_target);
+                        
+                        // Clear the temporary selection
+                        self.new_muscle_selection = None;
+                    }
+                }
+            });
+        });
 
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -577,11 +672,33 @@ impl HypertrophyApp {
             ui.label(format!("Resistance Profile: {:?}", self.exercise.resistance_profile));
             
             ui.add_space(5.0);
-            ui.label(format!("Target Muscle: {}", self.exercise.target_muscles.muscle_name));
-            ui.label("Active Divisions:");
-            for division in &self.exercise.target_muscles.muscle_divisions {
-                if division.active {
-                    ui.label(format!("- {}", division.name));
+            ui.label("Target Muscles:");
+            for target_muscle in &self.exercise.target_muscle_groups {
+                ui.label(format!(
+                    "- {} {}",
+                    target_muscle.muscle_name,
+                    if target_muscle.primary { "(Primary)" } else { "" }
+                ));
+                
+                if !target_muscle.muscle_divisions.iter().any(|d| d.active) {
+                    ui.indent("no_divisions", |ui| {
+                        ui.label("No specific divisions targeted");
+                    });
+                } else {
+                    ui.indent("active_divisions", |ui| {
+                        for division in &target_muscle.muscle_divisions {
+                            if division.active {
+                                let bias_text = match division.bias {
+                                    BiasLevel::None => "",
+                                    BiasLevel::Light => " (Light bias)",
+                                    BiasLevel::Moderate => " (Moderate bias)",
+                                    BiasLevel::Strong => " (Strong bias)",
+                                };
+                                
+                                ui.label(format!("• {}{}", division.name, bias_text));
+                            }
+                        }
+                    });
                 }
             }
             
@@ -668,15 +785,16 @@ impl HypertrophyApp {
             }
         }
         
-        // Get the primary muscle and create a subfolder for it
-        let muscle_folder = if !self.exercise.target_muscles.muscle_name.is_empty() {
-            // Convert to lowercase and replace spaces with underscores for folder name
-            self.exercise.target_muscles.muscle_name.to_lowercase().replace(" ", "_")
+        // Find primary muscle for folder organization
+        let muscle_folder = if let Some(primary) = self.exercise.target_muscle_groups.iter().find(|tm| tm.primary) {
+            primary.muscle_name.to_lowercase().replace(" ", "_")
+        } else if !self.exercise.target_muscle_groups.is_empty() {
+            // Use first muscle if no primary is set
+            self.exercise.target_muscle_groups[0].muscle_name.to_lowercase().replace(" ", "_")
         } else {
             "uncategorized".to_string()
         };
         
-        // Create the muscle-specific subdirectory
         let muscle_dir = self.data_dir.join(&muscle_folder);
         if !muscle_dir.exists() {
             if let Err(e) = fs::create_dir_all(&muscle_dir) {
@@ -685,7 +803,6 @@ impl HypertrophyApp {
             }
         }
         
-        // Create file path in the muscle subfolder
         let file_path = muscle_dir.join(format!("{}.json", filename));
         
         match serde_json::to_string_pretty(&self.exercise) {
