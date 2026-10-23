@@ -22,14 +22,24 @@ Steps:
      total weights (plate-loaded machines), or two different machines.
 
 Writes overrides/aliases.suggested.toml (status = "suggested") and prints a report.
-Review it, then save the lines you agree with as overrides/aliases.toml.
+Copy it to overrides/aliases.toml and review it there. Fields read from each variant:
+    status = "merge" + merge_into = "<slug>"   combine into another variant (chains are followed)
+    status = "remove"                          drop these entries from the data
+    weight_factor = 2.0                        multiply this variant's weights when merging
+    display = "Lat Pulldown"                   name for the final variant
+A merged variant goes to the gym most of its entries are from (ties: the most recent).
+
+When overrides/aliases.toml exists, also writes:
+    exports/grouped.json      parsed.json with "variant" (or "excluded") on every tracked entry
+    overrides/variants.toml   the final variants, for confirming
 """
 
 import json
 import re
 import statistics
 import sys
-from collections import defaultdict
+import tomllib
+from collections import Counter, defaultdict
 from pathlib import Path
 
 TYPOS = {
@@ -147,7 +157,8 @@ def collect(parsed):
                 tokens = tuple(sorted(set(tokens)))
                 gym = "any" if set(tokens) & PORTABLE else gym_of(labels.get(c["block"]))
                 rows.append({"name": e["name"], "family": fam, "key": (fam, tokens, gym),
-                             "date": c["started_on"], "weight": top_weight(e),
+                             "date": c["started_on"], "weight": top_weight(e), "entry": e,
+                             "gym": gym_of(labels.get(c["block"])),
                              "plates": any("plate" in (x["weight_note"] or "") for x in e["sets"])})
     return rows
 
@@ -221,10 +232,120 @@ def slug(key):
     return re.sub(r"[^a-z0-9]+", "_", " ".join(parts).lower()).strip("_")
 
 
+ACRONYMS = {"db": "DB", "ez": "EZ", "fm": "FM", "sa": "SA", "sl": "SL", "lf": "LF", "rdl": "RDL",
+            "sldl": "SLDL", "pjr": "PJR", "pc": "PC", "gaymachine": "Gay Machine", "freemotion": "Free Motion",
+            "lifefitness": "Life Fitness", "straightbar": "Straight Bar", "unilateral": "Unilateral"}
+
+
+def title(name):
+    return " ".join(ACRONYMS.get(w.lower(), w.capitalize()) for w in name.split())
+
+
+def resolve(variants, rules):
+    """Apply the reviewed rules. Returns (final variants, removed entry count)."""
+    by_slug = {slug(k): (k, members) for k, members in variants.items()}
+
+    def target(s, seen=()):
+        rule = rules.get(s, {})
+        if rule.get("status") == "merge":
+            if rule["merge_into"] in seen or rule["merge_into"] not in by_slug:
+                raise SystemExit(f"bad merge_into for {s}: {rule['merge_into']}")
+            return target(rule["merge_into"], seen + (s,))
+        return s
+
+    groups = defaultdict(list)
+    removed = 0
+    for s, (key, members) in by_slug.items():
+        rule = rules.get(s, {})
+        if rule.get("status") == "remove":
+            for r, _ in members:
+                r["entry"]["excluded"] = True
+                r["entry"]["variant"] = None
+            removed += len(members)
+            continue
+        groups[target(s)].append((s, key, members, rule.get("weight_factor", 1.0)))
+
+    final = []
+    for root, parts in groups.items():
+        rows = [(r, f) for _, _, members, f in parts for r, _ in members]
+        gyms = Counter("any" if key[2] == "any" else r["gym"] for _, key, members, _ in parts for r, _ in members)
+        top = max(gyms.values())
+        tied = {g for g, n in gyms.items() if n == top}
+        gym = max((r for r, _ in rows if ("any" if r["key"][2] == "any" else r["gym"]) in tied), key=lambda r: r["date"])
+        gym = "any" if gym["key"][2] == "any" else gym["gym"]
+        names = Counter(r["name"].lower() for r, _ in rows)
+        display = rules.get(root, {}).get("display") or title(names.most_common(1)[0][0])
+        family, tokens, _ = by_slug[root][0]
+        final.append({"display": display, "family": family, "gym": gym, "rows": rows, "tokens": tokens,
+                      "merged": sorted(s for s, *_ in parts if s != root), "root": root})
+
+    # Two variants at one gym with the same name: add the words that tell them apart.
+    dupes = Counter((v["display"].lower(), v["gym"]) for v in final)
+    for v in final:
+        if dupes[(v["display"].lower(), v["gym"])] > 1:
+            squashed = re.sub(r"[^a-z0-9]", "", v["display"].lower())
+            extra = [t for t in v["tokens"] if t.lower() not in squashed and not t.startswith("~")]
+            band = [t.strip("~") for t in v["tokens"] if t.startswith("~")]
+            if extra or band:
+                v["display"] += f" ({title(' '.join(extra or band))})"
+
+    # Slug from the display name, with the gym added only where two variants share a name.
+    counts = Counter(re.sub(r"[^a-z0-9]+", "_", v["display"].lower()).strip("_") for v in final)
+    for v in final:
+        base = re.sub(r"[^a-z0-9]+", "_", v["display"].lower()).strip("_")
+        v["slug"] = f"{base}_{v['gym']}" if counts[base] > 1 else base
+    taken = Counter(v["slug"] for v in final)
+    if any(n > 1 for n in taken.values()):
+        raise SystemExit(f"duplicate variant slugs: {[s for s, n in taken.items() if n > 1]}; set display in overrides/aliases.toml")
+    for v in final:
+        for r, factor in v["rows"]:
+            e = r["entry"]
+            e["variant"], e["excluded"] = v["slug"], False
+            if factor != 1.0:
+                for x in e["sets"]:
+                    if x["weight"] is not None:
+                        x["weight_original"] = x["weight"]
+                        x["weight"] = x["weight"] * factor
+                        x["weight_note"] = "; ".join(filter(None, [x["weight_note"], f"x{factor:g} from review"]))
+    return final, removed
+
+
+def write_resolved(parsed, final, removed, rows):
+    unassigned = sum(1 for r in rows if "variant" not in r["entry"])
+    out = Path("exports/grouped.json")
+    parsed = {**parsed, "variants": [
+        {"slug": v["slug"], "display": v["display"], "family": v["family"], "gym": v["gym"],
+         "names": sorted({r["name"].lower() for r, _ in v["rows"]})} for v in final]}
+    out.write_text(json.dumps(parsed, indent=2, ensure_ascii=False) + "\n")
+
+    lines = ["# Final exercise variants after review. Generated by scripts/group_exercises.py.",
+             "# Mark each one confirmed. Re-running the script overwrites this file, so make",
+             "# further changes in overrides/aliases.toml.", ""]
+    print(f"Resolved: {len(final)} variants, {removed} entries removed, {unassigned} unassigned\n")
+    for v in sorted(final, key=lambda v: (v["family"], v["display"])):
+        ws = [r["weight"] * f for r, f in v["rows"] if r["weight"]]
+        wtxt = f"{min(ws):g}-{max(ws):g}lb (median {statistics.median(ws):g})" if ws else "no weights"
+        names = sorted({r["name"].lower() for r, _ in v["rows"]})
+        merged = f", merged {len(v['merged'])}" if v["merged"] else ""
+        print(f"  [{v['family']}] {v['display']} ({v['gym']}): {len(v['rows'])} entries, {wtxt}{merged}")
+        lines += [f"[variants.{v['slug']}]", f'display = "{v["display"]}"', f'family = "{v["family"]}"',
+                  f'gym = "{v["gym"]}"', f"names = {json.dumps(names)}", f'weights = "{wtxt}"',
+                  f"merged_from = {json.dumps([v['root']] + v['merged'])}", 'status = "suggested"', ""]
+    Path("overrides/variants.toml").write_text("\n".join(lines))
+    print(f"\nwrote {out} and overrides/variants.toml")
+
+
 def main(argv):
     parsed = json.loads(Path(argv[0] if argv else "exports/parsed.json").read_text())
     rows = collect(parsed)
     variants = assign(rows)
+    rules_path = Path("overrides/aliases.toml")
+    if rules_path.exists():
+        with rules_path.open("rb") as f:
+            rules = tomllib.load(f).get("variants", {})
+        final, removed = resolve(variants, rules)
+        write_resolved(parsed, final, removed, rows)
+        return
 
     families = defaultdict(list)
     for key, members in variants.items():
