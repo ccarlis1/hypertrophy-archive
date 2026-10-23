@@ -45,3 +45,8 @@ Desktop.ini
 # Backup files
 *~
 *.bak 
+# Personal training data (never commit)
+*.db
+/exports/
+/overrides/
+/tests/fixtures/private/
