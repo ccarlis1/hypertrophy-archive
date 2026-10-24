@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use hypertrophy_archive::db::{self, Db};
+use hypertrophy_archive::db::Db;
 
 #[derive(Parser)]
 #[command(name = "ha", about = "Hypertrophy Archive workout log CLI")]

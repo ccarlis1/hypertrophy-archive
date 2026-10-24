@@ -1,4 +1,5 @@
 mod gui;
+mod logger_ui;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {

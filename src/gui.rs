@@ -1,3 +1,4 @@
+use crate::logger_ui::{LoggerUi, MainTab};
 use hypertrophy_archive::models::*;
 use eframe::egui;
 use egui::{Color32, RichText, Ui, InnerResponse};
@@ -27,6 +28,7 @@ pub struct HypertrophyApp {
     show_save_dialog: bool,
     save_filename: String,
     new_muscle_selection: Option<String>,
+    logger: LoggerUi,
 }
 
 enum Tab {
@@ -170,6 +172,9 @@ impl Default for HypertrophyApp {
             "Spine".to_string(),
         ];
 
+        let mut logger = LoggerUi::default();
+        logger.open_db();
+
         Self {
             exercise,
             status_message: "Ready to create a new exercise".to_string(),
@@ -180,6 +185,7 @@ impl Default for HypertrophyApp {
             show_save_dialog: false,
             save_filename: String::new(),
             new_muscle_selection: None,
+            logger,
         }
     }
 }
@@ -200,66 +206,90 @@ impl eframe::App for HypertrophyApp {
                 ui.add_space(5.0);
             });
 
-            ui.add_space(-475.0);
-
-            ui.horizontal_centered(|ui| {
-                ui.add_space(20.0);
-                let button_size = egui::vec2(140.0, 40.0);
-                
-                if ui.add_sized(button_size, self.tab_button_styled("Basic Info", Tab::BasicInfo)).clicked() {
-                    self.current_tab = Tab::BasicInfo;
-                }
-                if ui.add_sized(button_size, self.tab_button_styled("Target Muscles", Tab::TargetMuscles)).clicked() {
-                    self.current_tab = Tab::TargetMuscles;
-                }
-                if ui.add_sized(button_size, self.tab_button_styled("Joints Involved", Tab::JointsInvolved)).clicked() {
-                    self.current_tab = Tab::JointsInvolved;
-                }
-                if ui.add_sized(button_size, self.tab_button_styled("Additional Info", Tab::AdditionalInfo)).clicked() {
-                    self.current_tab = Tab::AdditionalInfo;
-                }
-                if ui.add_sized(button_size, self.tab_button_styled("Preview", Tab::Preview)).clicked() {
-                    self.current_tab = Tab::Preview;
-                }
-                ui.add_space(20.0);
-            });
-
-            ui.add_space(15.0);
+            self.logger.show_main_tabs(ui);
             ui.separator();
-            ui.add_space(15.0);
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    egui::Frame::none()
-                        .inner_margin(egui::style::Margin::symmetric(40.0, 10.0))
+            match self.logger.main_tab {
+                MainTab::Editor => {
+                    ui.add_space(5.0);
+                    ui.horizontal_centered(|ui| {
+                        ui.add_space(20.0);
+                        let button_size = egui::vec2(140.0, 40.0);
+
+                        if ui.add_sized(button_size, self.tab_button_styled("Basic Info", Tab::BasicInfo)).clicked() {
+                            self.current_tab = Tab::BasicInfo;
+                        }
+                        if ui.add_sized(button_size, self.tab_button_styled("Target Muscles", Tab::TargetMuscles)).clicked() {
+                            self.current_tab = Tab::TargetMuscles;
+                        }
+                        if ui.add_sized(button_size, self.tab_button_styled("Joints Involved", Tab::JointsInvolved)).clicked() {
+                            self.current_tab = Tab::JointsInvolved;
+                        }
+                        if ui.add_sized(button_size, self.tab_button_styled("Additional Info", Tab::AdditionalInfo)).clicked() {
+                            self.current_tab = Tab::AdditionalInfo;
+                        }
+                        if ui.add_sized(button_size, self.tab_button_styled("Preview", Tab::Preview)).clicked() {
+                            self.current_tab = Tab::Preview;
+                        }
+                        ui.add_space(20.0);
+                    });
+
+                    ui.add_space(15.0);
+                    ui.separator();
+                    ui.add_space(15.0);
+
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
                         .show(ui, |ui| {
-                            // Tab content
-                            match self.current_tab {
-                                Tab::BasicInfo => self.show_basic_info_tab(ui),
-                                Tab::TargetMuscles => self.show_target_muscles_tab(ui),
-                                Tab::JointsInvolved => self.show_joints_involved_tab(ui),
-                                Tab::AdditionalInfo => self.show_additional_info_tab(ui),
-                                Tab::Preview => self.show_preview_tab(ui),
+                            egui::Frame::none()
+                                .inner_margin(egui::style::Margin::symmetric(40.0, 10.0))
+                                .show(ui, |ui| {
+                                    match self.current_tab {
+                                        Tab::BasicInfo => self.show_basic_info_tab(ui),
+                                        Tab::TargetMuscles => self.show_target_muscles_tab(ui),
+                                        Tab::JointsInvolved => self.show_joints_involved_tab(ui),
+                                        Tab::AdditionalInfo => self.show_additional_info_tab(ui),
+                                        Tab::Preview => self.show_preview_tab(ui),
+                                    }
+                                });
+                        });
+
+                    ui.add_space(15.0);
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&self.status_message).size(16.0));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
+                            if ui.button(RichText::new("Save Exercise").size(18.0)).clicked() {
+                                self.show_save_dialog = true;
                             }
                         });
-                });
+                    });
 
-            // Status bar
-            ui.add_space(15.0);
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(&self.status_message).size(16.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
-                    if ui.button(RichText::new("Save Exercise").size(18.0)).clicked() {
-                        self.show_save_dialog = true;
+                    if self.show_save_dialog {
+                        self.show_save_dialog(ctx);
                     }
-                });
-            });
-
-            // Save dialog
-            if self.show_save_dialog {
-                self.show_save_dialog(ctx);
+                }
+                MainTab::Log => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.logger.show_log_tab(ui, &mut self.status_message);
+                    });
+                    ui.separator();
+                    ui.label(RichText::new(&self.status_message).size(16.0));
+                }
+                MainTab::History => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.logger.show_history_tab(ui, &mut self.status_message);
+                    });
+                    ui.separator();
+                    ui.label(RichText::new(&self.status_message).size(16.0));
+                }
+                MainTab::Variants => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.logger.show_variants_tab(ui, &mut self.status_message);
+                    });
+                    ui.separator();
+                    ui.label(RichText::new(&self.status_message).size(16.0));
+                }
             }
         });
     }
