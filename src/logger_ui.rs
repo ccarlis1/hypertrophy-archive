@@ -703,16 +703,18 @@ impl LoggerUi {
         if let Ok(Some(lp)) = self.with_db(|db| db.last_performance(v.id))
             && !lp.sets.is_empty()
         {
+            // A set left blank last time stays blank, so saving untouched doesn't
+            // record an empty set as logged.
             sets = lp
                 .sets
                 .iter()
                 .map(|s| DraftSet {
-                    weight: s.weight.map(|w| w.to_string()).unwrap_or_default(),
-                    reps: s.reps.map(|r| r.to_string()).unwrap_or_default(),
-                    rir_low: s.rir_low.map(|r| r.to_string()).unwrap_or_default(),
-                    rir_high: s.rir_high.map(|r| r.to_string()).unwrap_or_default(),
+                    weight: s.weight.filter(|_| s.logged).map(|w| w.to_string()).unwrap_or_default(),
+                    reps: s.reps.filter(|_| s.logged).map(|r| r.to_string()).unwrap_or_default(),
+                    rir_low: s.rir_low.filter(|_| s.logged).map(|r| r.to_string()).unwrap_or_default(),
+                    rir_high: s.rir_high.filter(|_| s.logged).map(|r| r.to_string()).unwrap_or_default(),
                     comment: String::new(),
-                    logged: true,
+                    logged: s.logged,
                 })
                 .collect();
         }
