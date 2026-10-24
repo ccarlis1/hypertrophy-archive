@@ -2,6 +2,7 @@
 name = "hypertrophy_archive"
 version = "0.1.0"
 edition = "2024"
+default-run = "hypertrophy_archive"
 
 [[bin]]
 name = "hypertrophy_archive"
