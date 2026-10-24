@@ -30,9 +30,10 @@ pub struct TargetMuscles {
     pub muscle_divisions: Vec<MuscleDivision>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Copy, Default)]
 pub enum BiasLevel {
     #[serde(rename = "none")]
+    #[default]
     None,
     #[serde(rename = "light")]
     Light,
@@ -40,12 +41,6 @@ pub enum BiasLevel {
     Moderate,
     #[serde(rename = "strong")]
     Strong,
-}
-
-impl Default for BiasLevel {
-    fn default() -> Self {
-        BiasLevel::None
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -91,4 +86,132 @@ pub enum PlaneOfMotion {
     Sagittal,
     Frontal,
     Transverse,
-} 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_exercise() -> Exercise {
+        Exercise {
+            name: "chest_press".to_string(),
+            id: 0,
+            r#type: ExerciseType::Compound,
+            description: "A press in the transverse plane.".to_string(),
+            target_muscle_groups: vec![TargetMuscles {
+                muscle_name: "chest".to_string(),
+                primary: true,
+                muscle_divisions: vec![
+                    MuscleDivision {
+                        name: "sternocostal".to_string(),
+                        active: true,
+                        bias: BiasLevel::None,
+                    },
+                    MuscleDivision {
+                        name: "clavicular".to_string(),
+                        active: true,
+                        bias: BiasLevel::Light,
+                    },
+                ],
+            }],
+            joints_involved: JointsInvolved {
+                joints: vec![
+                    Joint {
+                        name: "shoulder".to_string(),
+                        dynamic: false,
+                        angle: Some(45),
+                        direction: None,
+                        angle_initial: None,
+                        angle_final: None,
+                    },
+                    Joint {
+                        name: "elbow".to_string(),
+                        dynamic: true,
+                        angle: None,
+                        direction: Some("extension".to_string()),
+                        angle_initial: Some(30),
+                        angle_final: Some(180),
+                    },
+                ],
+            },
+            resistance_profile: ResistanceProfile::Descending,
+            plane_of_motion: PlaneOfMotion::Transverse,
+            tips: "Keep those shoulders tucked!".to_string(),
+            technique_video: "https://example.com/video".to_string(),
+        }
+    }
+
+    #[test]
+    fn exercise_serde_round_trip() {
+        let original = sample_exercise();
+        let json = serde_json::to_string_pretty(&original).expect("serialize");
+        let parsed: Exercise = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(parsed.name, original.name);
+        assert_eq!(parsed.id, original.id);
+        assert_eq!(parsed.r#type, original.r#type);
+        assert_eq!(parsed.description, original.description);
+        assert_eq!(parsed.resistance_profile, original.resistance_profile);
+        assert_eq!(parsed.plane_of_motion, original.plane_of_motion);
+        assert_eq!(parsed.tips, original.tips);
+        assert_eq!(parsed.technique_video, original.technique_video);
+        assert_eq!(parsed.target_muscle_groups.len(), 1);
+        assert_eq!(parsed.target_muscle_groups[0].muscle_name, "chest");
+        assert_eq!(parsed.target_muscle_groups[0].muscle_divisions.len(), 2);
+        assert_eq!(
+            parsed.target_muscle_groups[0].muscle_divisions[1].bias,
+            BiasLevel::Light
+        );
+        assert_eq!(parsed.joints_involved.joints.len(), 2);
+        assert_eq!(parsed.joints_involved.joints[0].angle, Some(45));
+        assert_eq!(
+            parsed.joints_involved.joints[1].direction.as_deref(),
+            Some("extension")
+        );
+    }
+
+    #[test]
+    fn exercise_parses_example_shape() {
+        let json = r#"{
+            "name": "chest_press",
+            "id": 0,
+            "type": "compound",
+            "description": "A press in the transverse plane.",
+            "target_muscles": [
+                {
+                    "muscle_name": "chest",
+                    "primary": true,
+                    "muscle_division": [
+                        { "name": "sternocostal", "active": true },
+                        { "name": "clavicular", "active": true, "bias": "light" }
+                    ]
+                }
+            ],
+            "joints_involved": {
+                "joint": [
+                    { "name": "shoulder", "dynamic": false, "angle": 45 },
+                    {
+                        "name": "elbow",
+                        "dynamic": true,
+                        "direction": "extension",
+                        "angle_initial": 30,
+                        "angle_final": 180
+                    }
+                ]
+            },
+            "resistance_profile": "descending",
+            "plane_of_motion": "transverse",
+            "tips": "Keep those shoulders tucked!",
+            "technique_video": "https://example.com/video"
+        }"#;
+
+        let exercise: Exercise = serde_json::from_str(json).expect("parse example shape");
+        assert_eq!(exercise.name, "chest_press");
+        assert_eq!(exercise.r#type, ExerciseType::Compound);
+        assert_eq!(exercise.resistance_profile, ResistanceProfile::Descending);
+        assert_eq!(exercise.plane_of_motion, PlaneOfMotion::Transverse);
+        assert_eq!(exercise.target_muscle_groups[0].muscle_divisions[0].bias, BiasLevel::None);
+        assert_eq!(exercise.target_muscle_groups[0].muscle_divisions[1].bias, BiasLevel::Light);
+        assert_eq!(exercise.joints_involved.joints[1].angle_final, Some(180));
+    }
+}
