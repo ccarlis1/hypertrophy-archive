@@ -598,6 +598,9 @@ impl LoggerUi {
     /// only written to the database on Save, so a typo doesn't leave an empty session.
     fn ensure_session(&mut self) -> Result<String, String> {
         let (block_id, week, day) = self.session_target()?;
+        // A leftover search from the last session would push the controls below it down.
+        self.search.clear();
+        self.search_results.clear();
         let existing = self.with_db(|db| {
             let Some(cycle) = db.get_cycle_by_block_week(block_id, week)? else {
                 return Ok(None);
@@ -670,6 +673,8 @@ impl LoggerUi {
         self.day_label = summary.session.day_label.clone().unwrap_or_default();
         self.session_id = Some(summary.session.id);
         self.new_session_pending = false;
+        self.search.clear();
+        self.search_results.clear();
         let _ = self.load_session_drafts(summary.session.id);
     }
 
