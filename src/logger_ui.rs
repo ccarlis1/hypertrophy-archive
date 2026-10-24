@@ -31,6 +31,8 @@ pub struct LoggerUi {
     pub week: String,
     pub day_label: String,
     pub session_id: Option<i64>,
+    /// "New / load session" picked a day that doesn't exist yet; it's created on Save.
+    pub new_session_pending: bool,
     pub search: String,
     pub search_results: Vec<Variant>,
     pub drafts: Vec<DraftEntry>,
@@ -90,6 +92,7 @@ impl Default for LoggerUi {
             week: "1".to_string(),
             day_label: "Upper 1".to_string(),
             session_id: None,
+            new_session_pending: false,
             search: String::new(),
             search_results: Vec::new(),
             drafts: Vec::new(),
@@ -259,6 +262,8 @@ impl LoggerUi {
             }
             if let Some(id) = self.session_id {
                 ui.label(format!("session #{id}"));
+            } else if self.new_session_pending {
+                ui.label("new session (unsaved)");
             }
         });
 
@@ -572,7 +577,8 @@ impl LoggerUi {
         Ok(format!("created block {name} (#{id})"))
     }
 
-    fn ensure_session(&mut self) -> Result<String, String> {
+    /// Block, week and day label from the Log tab fields.
+    fn session_target(&self) -> Result<(i64, i32, String), String> {
         let block_id = self
             .selected_block_id
             .ok_or_else(|| "select a block first".to_string())?;
@@ -585,42 +591,38 @@ impl LoggerUi {
         if day.is_empty() {
             return Err("day label required".into());
         }
+        Ok((block_id, week, day))
+    }
 
-        let (cycle_id, session_id) = self.with_db(|db| {
-            let cycle = db.get_or_create_cycle(block_id, week, Some(&format!("Week {week}")), Source::App)?;
-            // Reuse existing session with same day_label in this cycle if present
-            let sessions = db.list_sessions()?;
-            if let Some(existing) = sessions.iter().find(|s| {
-                s.session.cycle_id == cycle.id
-                    && s.session.day_label.as_deref() == Some(day.as_str())
-            }) {
-                return Ok((cycle.id, existing.session.id));
-            }
-            let index = sessions
-                .iter()
-                .filter(|s| s.session.cycle_id == cycle.id)
-                .count() as i32;
-            let sid = db.create_session(&NewSession {
-                cycle_id: cycle.id,
-                day_number: None,
-                day_label: Some(day.clone()),
-                comment: None,
-                header_raw: Some(day.clone()),
-                implicit: false,
-                index,
-                notes: Vec::new(),
-                performed_on: None,
-                date_precision: DatePrecision::Unknown,
-                source: Source::App,
-            })?;
-            Ok((cycle.id, sid))
+    /// Load the session for the selected block/week/day if it exists. A new one is
+    /// only written to the database on Save, so a typo doesn't leave an empty session.
+    fn ensure_session(&mut self) -> Result<String, String> {
+        let (block_id, week, day) = self.session_target()?;
+        let existing = self.with_db(|db| {
+            let Some(cycle) = db.get_cycle_by_block_week(block_id, week)? else {
+                return Ok(None);
+            };
+            Ok(db
+                .list_sessions()?
+                .into_iter()
+                .find(|s| s.session.cycle_id == cycle.id && s.session.day_label.as_deref() == Some(day.as_str()))
+                .map(|s| s.session.id))
         })?;
 
-        let _ = cycle_id;
-        self.session_id = Some(session_id);
-        // Load existing entries into drafts
-        self.load_session_drafts(session_id)?;
-        Ok(format!("session #{session_id} ready"))
+        match existing {
+            Some(session_id) => {
+                self.session_id = Some(session_id);
+                self.new_session_pending = false;
+                self.load_session_drafts(session_id)?;
+                Ok(format!("loaded session #{session_id}"))
+            }
+            None => {
+                self.session_id = None;
+                self.new_session_pending = true;
+                self.drafts.clear();
+                Ok(format!("new session: week {week}, {day} (created when you save)"))
+            }
+        }
     }
 
     fn load_session_drafts(&mut self, session_id: i64) -> Result<(), String> {
@@ -667,6 +669,7 @@ impl LoggerUi {
         self.week = summary.week.to_string();
         self.day_label = summary.session.day_label.clone().unwrap_or_default();
         self.session_id = Some(summary.session.id);
+        self.new_session_pending = false;
         let _ = self.load_session_drafts(summary.session.id);
     }
 
@@ -740,9 +743,20 @@ impl LoggerUi {
     }
 
     fn save_session(&mut self) -> Result<String, String> {
-        let session_id = self
-            .session_id
-            .ok_or_else(|| "create or load a session first".to_string())?;
+        let session_id = match self.session_id {
+            Some(id) => id,
+            None if self.new_session_pending => {
+                if self.drafts.is_empty() {
+                    return Err("nothing to save yet".into());
+                }
+                let (block_id, week, day) = self.session_target()?;
+                let id = self.with_db(|db| find_or_create_session(db, block_id, week, &day))?;
+                self.session_id = Some(id);
+                self.new_session_pending = false;
+                id
+            }
+            None => return Err("create or load a session first".into()),
+        };
         self.with_db(|db| {
             db.clear_session_entries(session_id)?;
             for (i, draft) in self.drafts.iter().enumerate() {
@@ -837,6 +851,32 @@ impl LoggerUi {
         self.with_db(|db| db.update_variant(&v))?;
         Ok(format!("updated {}", v.slug))
     }
+}
+
+/// The session for block/week/day, creating the week and session if needed.
+fn find_or_create_session(db: &Db, block_id: i64, week: i32, day: &str) -> Result<i64, String> {
+    let cycle = db.get_or_create_cycle(block_id, week, Some(&format!("Week {week}")), Source::App)?;
+    let sessions = db.list_sessions()?;
+    if let Some(existing) = sessions
+        .iter()
+        .find(|s| s.session.cycle_id == cycle.id && s.session.day_label.as_deref() == Some(day))
+    {
+        return Ok(existing.session.id);
+    }
+    let index = sessions.iter().filter(|s| s.session.cycle_id == cycle.id).count() as i32;
+    db.create_session(&NewSession {
+        cycle_id: cycle.id,
+        day_number: None,
+        day_label: Some(day.to_string()),
+        comment: None,
+        header_raw: Some(day.to_string()),
+        implicit: false,
+        index,
+        notes: Vec::new(),
+        performed_on: None,
+        date_precision: DatePrecision::Unknown,
+        source: Source::App,
+    })
 }
 
 fn parse_f64(s: &str) -> Option<f64> {
