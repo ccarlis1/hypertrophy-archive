@@ -89,5 +89,76 @@ class ParseSetTest(unittest.TestCase):
         self.assertEqual((h["day_label"], h["comment"]), (None, "short on time today"))
 
 
+class LineOverridesTest(unittest.TestCase):
+    """overrides/lines.toml: fix, accept, and raw-guard mismatch."""
+
+    NOTE = "note://test/p1"
+
+    def note_text(self, *body_lines):
+        return "Title\n" + "\n".join(body_lines)
+
+    def test_text_fix_reparses_and_keeps_original_raw(self):
+        text = self.note_text("Pulldown - 120lbs- 8 RIR")
+        overrides = {
+            (self.NOTE, 2): {
+                "note": self.NOTE,
+                "line": 2,
+                "raw": "Pulldown - 120lbs- 8 RIR",
+                "text": "Pulldown - 120lbs - 8 reps",
+                "reason": "8 RIR was a typo for 8 reps",
+            }
+        }
+        sessions, review = parse_notes.parse_note(
+            text, "Title", note_id=self.NOTE, line_overrides=overrides
+        )
+        e = sessions[0]["entries"][0]
+        self.assertEqual(e["raw"], "Pulldown - 120lbs- 8 RIR")
+        self.assertEqual((e["sets"][0]["weight"], e["sets"][0]["reps"], e["sets"][0]["rir_low"]),
+                         (120, 8, None))
+        self.assertTrue(any(r["resolution"] == "fixed" for r in review))
+        self.assertFalse(any(r["resolution"] == "open" for r in review))
+
+    def test_accept_marks_review_without_changing_parse(self):
+        text = self.note_text("Calf Raise - set 1 - 90lbs - 12 reps 2 RIR - set 2 - 80lbs 2 RIR")
+        overrides = {
+            (self.NOTE, 2): {
+                "note": self.NOTE,
+                "line": 2,
+                "raw": "Calf Raise - set 1 - 90lbs - 12 reps 2 RIR - set 2 - 80lbs 2 RIR",
+                "accept": "set 2 rep count wasn't recorded",
+            }
+        }
+        sessions, review = parse_notes.parse_note(
+            text, "Title", note_id=self.NOTE, line_overrides=overrides
+        )
+        s2 = sessions[0]["entries"][0]["sets"][1]
+        self.assertIsNone(s2["reps"])
+        self.assertEqual(s2["rir_low"], 2)
+        self.assertTrue(review)
+        self.assertTrue(all(r["resolution"] == "accepted" for r in review))
+        self.assertEqual(review[0]["note_id"], self.NOTE)
+
+    def test_raw_guard_mismatch_skips_override(self):
+        text = self.note_text("Pulldown - 120lbs- 8 RIR")
+        overrides = {
+            (self.NOTE, 2): {
+                "note": self.NOTE,
+                "line": 2,
+                "raw": "Pulldown - DIFFERENT",
+                "text": "Pulldown - 120lbs - 8 reps",
+                "reason": "should not apply",
+            }
+        }
+        warnings = []
+        sessions, review = parse_notes.parse_note(
+            text, "Title", note_id=self.NOTE, line_overrides=overrides, warnings=warnings
+        )
+        self.assertTrue(any("guard mismatch" in w for w in warnings))
+        s1 = sessions[0]["entries"][0]["sets"][0]
+        self.assertIsNone(s1["reps"])
+        self.assertEqual(s1["rir_low"], 8)
+        self.assertTrue(any(r["resolution"] == "open" for r in review))
+
+
 if __name__ == "__main__":
     unittest.main()

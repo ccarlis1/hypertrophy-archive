@@ -4,10 +4,12 @@ Usage:
     python3 scripts/parse_notes.py [exports/notes.json] [-o exports/parsed.json]
     python3 scripts/parse_notes.py --fixtures   # write tests/fixtures/private/*.expected.json
 
-Reads the export from scripts/export_notes.js and overrides/titles.toml, and writes
-blocks -> cycles (weeks) -> sessions -> entries (exercises) -> sets. Lines the parser
-can't fully trust go in a review list with the note, line number and reason. Nothing
-is dropped: every entry and set keeps its raw text.
+Reads the export from scripts/export_notes.js, overrides/titles.toml and
+overrides/lines.toml, and writes blocks -> cycles (weeks) -> sessions -> entries
+(exercises) -> sets. Lines the parser can't fully trust go in a review list with
+the note id, line number and reason. Nothing is dropped: every entry and set
+keeps its raw text. Line fixes in lines.toml replace the text used for parsing
+(entry.raw stays the original); accepts mark a review item without changing it.
 
 Conventions:
 - Weights are lb. Plate-loaded weights are logged per side, so "3 and a 35" is
@@ -22,7 +24,9 @@ Conventions:
 import argparse
 import json
 import re
+import sys
 import tomllib
+from collections import Counter
 from pathlib import Path
 
 PARSER_VERSION = 1
@@ -305,10 +309,62 @@ def looks_like_exercise(line, known_names):
     return parse_name(split_name(line)[0])[0].lower() in known_names
 
 
-def parse_note(text, title, known_names=frozenset()):
-    """Parse one note's text into sessions. Returns (sessions, review items)."""
+def load_line_overrides(path=None):
+    """Load overrides/lines.toml into {(note_id, line_no): override_dict}."""
+    path = Path(path or "overrides/lines.toml")
+    if not path.exists():
+        return {}
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    out = {}
+    for item in data.get("line", []):
+        key = (item["note"], int(item["line"]))
+        if key in out:
+            raise SystemExit(f"duplicate lines.toml entry for {key[0]} line {key[1]}")
+        out[key] = item
+    return out
+
+
+def apply_line_override(note_id, line_no, line, line_overrides, warnings):
+    """Return (text_to_parse, resolution_or_None, override_or_None).
+
+    resolution is set when the line has a matching override (fixed/accepted).
+    entry.raw should keep the original `line`; only the parse input changes.
+    """
+    if not note_id or not line_overrides:
+        return line, None, None
+    ov = line_overrides.get((note_id, line_no))
+    if not ov:
+        return line, None, None
+    expected = (ov.get("raw") or "").strip()
+    if expected and expected != line:
+        warnings.append(
+            f"lines.toml guard mismatch for {note_id} line {line_no}: "
+            f"expected {expected!r}, got {line!r}; skipping override"
+        )
+        return line, None, None
+    if ov.get("text") is not None:
+        return ov["text"].strip(), "fixed", ov
+    if ov.get("accept") is not None:
+        return line, "accepted", ov
+    warnings.append(f"lines.toml entry for {note_id} line {line_no} has neither text nor accept; ignoring")
+    return line, None, None
+
+
+def parse_note(text, title, known_names=frozenset(), note_id=None, line_overrides=None, warnings=None):
+    """Parse one note's text into sessions. Returns (sessions, review items).
+
+    line_overrides maps (note_id, line_no) -> override from overrides/lines.toml.
+    When an override provides `text`, that text is parsed but entry.raw keeps the
+    original note line. Review items include note_id and resolution
+    (fixed|accepted|open).
+    """
     sessions, review = [], []
     current = None
+    line_overrides = line_overrides or {}
+    warnings = warnings if warnings is not None else []
+    # Lines that had a text/accept override but produced no parser issues.
+    resolved_without_issue = {}
 
     def session():
         nonlocal current
@@ -323,27 +379,59 @@ def parse_note(text, title, known_names=frozenset()):
         line = raw.strip()
         if not line:
             continue
+        parse_line, resolution, ov = apply_line_override(
+            note_id, line_no, line, line_overrides, warnings
+        )
         issues = []
-        header = parse_header(line)
+        header = parse_header(parse_line)
         if header:
             current = {**header, "implicit": False, "notes": [], "entries": []}
             sessions.append(current)
             continue
-        if re.match(r"^set\s*\d", line, re.I) and current and current["entries"]:
+        if re.match(r"^set\s*\d", parse_line, re.I) and current and current["entries"]:
             entry = current["entries"][-1]
+            # Keep the original note text in raw; parse from the (possibly fixed) line.
             entry["raw"] += "\n" + line
-            add_sets(entry, line, issues)
-        elif SHORTHAND.match(line):
-            entry = parse_shorthand(line, issues)
+            add_sets(entry, parse_line, issues)
+        elif SHORTHAND.match(parse_line):
+            entry = parse_shorthand(parse_line, issues)
+            entry["raw"] = line
             session()["entries"].append(entry)
-        elif looks_like_exercise(line, known_names):
-            entry = parse_entry(line, issues)
+        elif looks_like_exercise(parse_line, known_names):
+            entry = parse_entry(parse_line, issues)
+            entry["raw"] = line
             session()["entries"].append(entry)
         else:
             session()["notes"].append(line)
             continue
+        if resolution and not issues:
+            resolved_without_issue[line_no] = (line, resolution, ov)
         for issue in issues:
-            review.append({"title": title, "line": line_no, "raw": line, "issue": issue})
+            item = {
+                "title": title,
+                "note_id": note_id,
+                "line": line_no,
+                "raw": line,
+                "issue": issue,
+                "resolution": resolution or "open",
+            }
+            if ov and ov.get("reason"):
+                item["reason"] = ov["reason"]
+            elif ov and ov.get("accept") and resolution == "accepted":
+                item["reason"] = ov["accept"]
+            review.append(item)
+
+    for line_no, (line, resolution, ov) in resolved_without_issue.items():
+        reason = (ov or {}).get("reason") or (ov or {}).get("accept") or resolution
+        review.append({
+            "title": title,
+            "note_id": note_id,
+            "line": line_no,
+            "raw": line,
+            "issue": reason,
+            "resolution": resolution,
+            "reason": reason,
+        })
 
     for i, s in enumerate(sessions):
         s["index"] = i + 1
@@ -362,6 +450,8 @@ def load_overrides():
 
 def parse_export(data):
     overrides = load_overrides()
+    line_overrides = load_line_overrides()
+    warnings = []
     notes = []
     for n in data["notes"]:
         ov = overrides.get(n["id"], {})
@@ -373,10 +463,11 @@ def parse_export(data):
         notes.append((n, block, week, ov))
 
     # First pass: collect exercise names, so a bare name with no data ("Single Leg Ext.")
-    # is still read as an exercise in the second pass.
+    # is still read as an exercise in the second pass. Use original text (no line fixes)
+    # so known-name detection stays stable.
     known = set()
     for n, *_ in notes:
-        for s in parse_note(n["plaintext"], n["title"])[0]:
+        for s in parse_note(n["plaintext"], n["title"], note_id=n["id"])[0]:
             known.update(e["name"].lower() for e in s["entries"])
 
     blocks, cycles, review = {}, [], []
@@ -384,12 +475,17 @@ def parse_export(data):
         meta = {**BLOCKS.get(block, {"name": block, "split": "other", "label": None})}
         meta.update({k: ov[k] for k in ("split", "label") if k in ov})
         b = blocks.setdefault(block, {"slug": block, **meta, "started_on": n["created"][:10]})
-        sessions, rv = parse_note(n["plaintext"], n["title"], frozenset(known))
+        sessions, rv = parse_note(
+            n["plaintext"], n["title"], frozenset(known),
+            note_id=n["id"], line_overrides=line_overrides, warnings=warnings,
+        )
         review += rv
         cycles.append({"block": block, "week": week, "title": n["title"], "note_id": n["id"],
                        "started_on": n["created"][:10], "date_precision": "week",
                        "override": ov.get("reason"), "sessions": sessions})
         b["started_on"] = min(b["started_on"], n["created"][:10])
+    for w in warnings:
+        print(f"warning: {w}", file=sys.stderr)
     return {"parser_version": PARSER_VERSION, "exported_at": data["exported_at"],
             "blocks": list(blocks.values()), "cycles": cycles, "review": review}
 
@@ -403,7 +499,10 @@ def summarize(out):
           f"{len(entries)} exercise entries ({sum(not e['tracked'] for e in entries)} untracked), "
           f"{len(sets)} sets ({len(logged)} logged, {sum(x['weight_inferred'] for x in logged)} with inferred weight)")
     print(f"Logged sets missing weight: {sum(x['weight'] is None for x in logged)}, missing reps: {sum(x['reps'] is None for x in logged)}")
-    print(f"Review items: {len(out['review'])}")
+    by_res = Counter(r.get("resolution", "open") for r in out["review"])
+    print(f"Review items: {len(out['review'])} "
+          f"({by_res.get('open', 0)} open, {by_res.get('accepted', 0)} accepted, "
+          f"{by_res.get('fixed', 0)} fixed)")
 
 
 def write_fixtures():
