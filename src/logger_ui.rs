@@ -327,8 +327,12 @@ impl LoggerUi {
                         ui.label("settings");
                         ui.text_edit_singleline(&mut draft.settings);
                     });
+                    let mut remove_set = None;
                     for (si, set) in draft.sets.iter_mut().enumerate() {
                         ui.horizontal(|ui| {
+                            if ui.small_button("✕").on_hover_text("Delete this set").clicked() {
+                                remove_set = Some(si);
+                            }
                             ui.label(format!("set {}", si + 1));
                             ui.checkbox(&mut set.logged, "logged");
                             ui.label("w");
@@ -342,6 +346,10 @@ impl LoggerUi {
                             ui.label("note");
                             ui.text_edit_singleline(&mut set.comment);
                         });
+                    }
+                    // Set numbers come from position when saving, so the rest renumber.
+                    if let Some(si) = remove_set {
+                        draft.sets.remove(si);
                     }
                     if ui.button("+ set").clicked() {
                         draft.sets.push(DraftSet {
