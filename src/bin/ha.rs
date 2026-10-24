@@ -62,12 +62,6 @@ enum VariantCommands {
     Seed { path: PathBuf },
 }
 
-fn open_db(path: Option<PathBuf>) -> Result<Db, String> {
-    match path {
-        Some(p) => Db::open(p),
-        None => Db::open_default(),
-    }
-}
 
 fn main() {
     if let Err(e) = run() {
@@ -78,7 +72,17 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
-    let db = open_db(cli.db)?;
+    let db_path = match cli.db {
+        Some(p) => p,
+        None => db::default_db_path()?,
+    };
+    // A dry-run import works on a throwaway copy, so the real file isn't created or
+    // migrated. Declared before `db` so the copy outlives the connection.
+    let scratch = match cli.command {
+        Commands::Import { dry_run: true, .. } => Some(db::ScratchCopy::new(&db_path)?),
+        _ => None,
+    };
+    let db = Db::open(scratch.as_ref().map_or(db_path.as_path(), |s| s.path()))?;
 
     match cli.command {
         Commands::Log {
@@ -215,7 +219,7 @@ fn run() -> Result<(), String> {
                 },
             )?;
             if dry_run {
-                println!("dry-run (no changes written to {})", db.path().display());
+                println!("dry-run (no changes written to {})", db_path.display());
             } else {
                 println!("imported into {}", db.path().display());
             }

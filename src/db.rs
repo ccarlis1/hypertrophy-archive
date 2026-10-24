@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -101,6 +102,46 @@ pub fn backup(db_path: &Path, keep: usize) -> Result<Option<PathBuf>, String> {
         fs::remove_file(old).map_err(|e| format!("remove old backup {}: {e}", old.display()))?;
     }
     Ok(Some(bak))
+}
+
+/// A throwaway copy of the database for `--dry-run`, removed on drop. The real file is
+/// never opened, so a dry run doesn't create it or apply migrations to it.
+#[derive(Debug)]
+pub struct ScratchCopy {
+    dir: PathBuf,
+    path: PathBuf,
+}
+
+impl ScratchCopy {
+    pub fn new(db_path: &Path) -> Result<Self, String> {
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "ha_dry_run_{}_{nanos}_{n}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        let path = dir.join("log.db");
+        if db_path.exists() {
+            fs::copy(db_path, &path)
+                .map_err(|e| format!("copy {} for dry run: {e}", db_path.display()))?;
+        }
+        Ok(Self { dir, path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchCopy {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 
 pub fn open(path: &Path) -> Result<Db, String> {
@@ -971,7 +1012,6 @@ fn map_set(row: &rusqlite::Row<'_>) -> rusqlite::Result<SetLog> {
 mod tests {
     use super::*;
     use crate::log::GroupedVariant;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_db() -> Db {
@@ -1242,6 +1282,43 @@ mod tests {
             .collect();
         left.sort();
         assert_eq!(left, made[2..].to_vec(), "keeps the 3 newest, all distinct");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn scratch_copy_leaves_the_real_db_alone() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ha_scratch_test_{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+
+        // Missing database: the dry run must not create it.
+        let missing = dir.join("missing.db");
+        {
+            let scratch = ScratchCopy::new(&missing).unwrap();
+            open(scratch.path()).unwrap();
+        }
+        assert!(!missing.exists());
+
+        // v1 database: the copy is migrated, the real file is not.
+        let real = dir.join("log.db");
+        {
+            let conn = Connection::open(&real).unwrap();
+            conn.execute_batch(MIGRATION_001).unwrap();
+            conn.execute_batch("PRAGMA user_version = 1;").unwrap();
+        }
+        let before = fs::read(&real).unwrap();
+        let scratch_dir;
+        {
+            let scratch = ScratchCopy::new(&real).unwrap();
+            scratch_dir = scratch.path().parent().unwrap().to_path_buf();
+            let copy = open(scratch.path()).unwrap();
+            assert_eq!(user_version(&copy.conn).unwrap(), 2);
+        }
+        assert_eq!(fs::read(&real).unwrap(), before);
+        assert!(!scratch_dir.exists(), "scratch copy removed on drop");
         fs::remove_dir_all(&dir).unwrap();
     }
 
