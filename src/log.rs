@@ -338,3 +338,134 @@ pub struct GroupedVariant {
     #[serde(default)]
     pub names: Vec<String>,
 }
+
+/// Full `exports/grouped.json` document for `ha import`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GroupedFile {
+    #[serde(default)]
+    pub parser_version: i32,
+    #[serde(default)]
+    pub exported_at: Option<String>,
+    pub blocks: Vec<GroupedBlock>,
+    pub cycles: Vec<GroupedCycle>,
+    #[serde(default)]
+    pub review: Vec<GroupedReviewItem>,
+    #[serde(default)]
+    pub variants: Vec<GroupedVariant>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GroupedBlock {
+    pub slug: String,
+    pub name: String,
+    pub split: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub started_on: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedCycle {
+    pub block: String,
+    pub week: i32,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub note_id: String,
+    #[serde(default)]
+    pub started_on: Option<String>,
+    #[serde(default)]
+    pub date_precision: Option<String>,
+    #[serde(default, rename = "override")]
+    pub override_reason: Option<String>,
+    pub sessions: Vec<GroupedSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedSession {
+    #[serde(default)]
+    pub day_number: Option<i32>,
+    #[serde(default)]
+    pub day_label: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub header_raw: Option<String>,
+    #[serde(default)]
+    pub implicit: bool,
+    #[serde(default)]
+    pub notes: Vec<String>,
+    #[serde(default)]
+    pub index: i32,
+    pub entries: Vec<GroupedEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedEntry {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub name_raw: String,
+    #[serde(default)]
+    pub qualifiers: Vec<String>,
+    #[serde(default)]
+    pub settings: Option<String>,
+    #[serde(default = "default_true")]
+    pub tracked: bool,
+    #[serde(default)]
+    pub untracked_sets: Option<i32>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub raw: Option<String>,
+    #[serde(default)]
+    pub sets: Vec<GroupedSet>,
+    pub position: i32,
+    #[serde(default)]
+    pub variant: Option<String>,
+    #[serde(default)]
+    pub excluded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedSet {
+    pub set_number: i32,
+    #[serde(default)]
+    pub weight: Option<f64>,
+    #[serde(default)]
+    pub weight_inferred: bool,
+    #[serde(default)]
+    pub weight_note: Option<String>,
+    #[serde(default)]
+    pub reps: Option<f64>,
+    #[serde(default)]
+    pub rir_low: Option<f64>,
+    #[serde(default)]
+    pub rir_high: Option<f64>,
+    #[serde(default = "default_true")]
+    pub logged: bool,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub raw: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GroupedReviewItem {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub note_id: Option<String>,
+    pub line: i32,
+    #[serde(default)]
+    pub raw: Option<String>,
+    #[serde(default)]
+    pub issue: Option<String>,
+    #[serde(default)]
+    pub resolution: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}

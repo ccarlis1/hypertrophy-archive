@@ -14,6 +14,18 @@ use crate::log::{
 const MIGRATION_001: &str = include_str!("../migrations/001_init.sql");
 const MIGRATION_002: &str = include_str!("../migrations/002_import.sql");
 
+/// Fields written onto a cycle during Notes import.
+#[derive(Debug, Clone)]
+pub struct CycleImportMeta<'a> {
+    pub title: Option<&'a str>,
+    pub note_id: Option<&'a str>,
+    pub started_on: Option<&'a str>,
+    pub date_precision: DatePrecision,
+    pub override_flag: bool,
+    pub source: Source,
+    pub source_hash: Option<&'a str>,
+}
+
 #[derive(Debug)]
 pub struct Db {
     conn: Connection,
@@ -122,6 +134,20 @@ impl Db {
             )
             .map_err(|e| format!("create block: {e}"))?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Insert or update a block by slug. Returns the block id.
+    pub fn upsert_block(&self, b: &NewBlock) -> Result<i64, String> {
+        if let Some(existing) = self.get_block_by_slug(&b.slug)? {
+            self.conn
+                .execute(
+                    "UPDATE block SET name = ?1, split = ?2, label = ?3, started_on = ?4 WHERE id = ?5",
+                    params![b.name, b.split.as_str(), b.label, b.started_on, existing.id],
+                )
+                .map_err(|e| format!("update block: {e}"))?;
+            return Ok(existing.id);
+        }
+        self.create_block(b)
     }
 
     pub fn get_block(&self, id: i64) -> Result<Option<Block>, String> {
@@ -275,6 +301,112 @@ impl Db {
             .map_err(|e| format!("list cycles: {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("list cycles: {e}"))
+    }
+
+    pub fn get_cycle_by_note_id(&self, note_id: &str) -> Result<Option<Cycle>, String> {
+        self.conn
+            .query_row(
+                "SELECT id, block_id, week, title, note_id, started_on, date_precision, override, source, source_hash
+                 FROM cycle WHERE note_id = ?1",
+                params![note_id],
+                map_cycle,
+            )
+            .optional()
+            .map_err(|e| format!("get cycle by note_id: {e}"))
+    }
+
+    pub fn update_cycle_import_meta(&self, cycle_id: i64, meta: &CycleImportMeta<'_>) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE cycle SET title = ?1, note_id = ?2, started_on = ?3, date_precision = ?4,
+                 override = ?5, source = ?6, source_hash = ?7 WHERE id = ?8",
+                params![
+                    meta.title,
+                    meta.note_id,
+                    meta.started_on,
+                    meta.date_precision.as_str(),
+                    bool_i(meta.override_flag),
+                    meta.source.as_str(),
+                    meta.source_hash,
+                    cycle_id
+                ],
+            )
+            .map_err(|e| format!("update cycle import meta: {e}"))?;
+        Ok(())
+    }
+
+    /// Delete sessions with `source='notes_import'` for a cycle (entries/sets cascade).
+    pub fn delete_notes_import_sessions(&self, cycle_id: i64) -> Result<usize, String> {
+        let n = self
+            .conn
+            .execute(
+                "DELETE FROM session WHERE cycle_id = ?1 AND source = 'notes_import'",
+                params![cycle_id],
+            )
+            .map_err(|e| format!("delete notes_import sessions: {e}"))?;
+        Ok(n)
+    }
+
+    pub fn count_sessions_for_cycle(&self, cycle_id: i64) -> Result<i64, String> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM session WHERE cycle_id = ?1",
+                params![cycle_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count sessions: {e}"))
+    }
+
+    pub fn delete_cycle(&self, cycle_id: i64) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM cycle WHERE id = ?1", params![cycle_id])
+            .map_err(|e| format!("delete cycle: {e}"))?;
+        Ok(())
+    }
+
+    /// List note_ids currently stored on cycles (for stale-note reporting).
+    pub fn list_imported_note_ids(&self) -> Result<Vec<(String, Option<String>)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT note_id, source_hash FROM cycle WHERE note_id IS NOT NULL ORDER BY note_id",
+            )
+            .map_err(|e| format!("list imported note_ids: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("list imported note_ids: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("list imported note_ids: {e}"))
+    }
+
+    /// Insert an alias only if the normalized name is not already taken.
+    pub fn insert_alias_if_absent(
+        &self,
+        normalized: &str,
+        variant_id: i64,
+        status: AliasStatus,
+    ) -> Result<bool, String> {
+        let n = self
+            .conn
+            .execute(
+                "INSERT OR IGNORE INTO alias (normalized, variant_id, status) VALUES (?1, ?2, ?3)",
+                params![normalized, variant_id, status.as_str()],
+            )
+            .map_err(|e| format!("insert alias if absent: {e}"))?;
+        Ok(n > 0)
+    }
+
+    /// Create a variant only if the slug is missing. Returns (id, created).
+    pub fn ensure_variant(&self, v: &NewVariant) -> Result<(i64, bool), String> {
+        if let Some(existing) = self.get_variant_by_slug(&v.slug)? {
+            return Ok((existing.id, false));
+        }
+        Ok((self.create_variant(v)?, true))
+    }
+
+    /// Exposed for import transactions (dry-run rollback / commit).
+    pub fn conn(&self) -> &Connection {
+        &self.conn
     }
 
     pub fn create_session(&self, s: &NewSession) -> Result<i64, String> {

@@ -1,0 +1,264 @@
+{
+  "parser_version": 1,
+  "exported_at": "2026-01-01T00:00:00Z",
+  "blocks": [
+    {
+      "slug": "test_block",
+      "name": "Test Block",
+      "split": "upper_lower",
+      "label": "home",
+      "started_on": "2026-01-01"
+    },
+    {
+      "slug": "other_block",
+      "name": "Other Block",
+      "split": "full_body",
+      "label": "home",
+      "started_on": "2026-02-01"
+    }
+  ],
+  "cycles": [
+    {
+      "block": "test_block",
+      "week": 1,
+      "title": "Test Week 1",
+      "note_id": "note://test/w1",
+      "started_on": "2026-01-01",
+      "date_precision": "week",
+      "override": null,
+      "sessions": [
+        {
+          "day_number": 1,
+          "day_label": "Upper 1",
+          "comment": null,
+          "header_raw": "Day 1: Upper 1",
+          "implicit": false,
+          "notes": ["felt good"],
+          "index": 1,
+          "entries": [
+            {
+              "name": "Cable Curl",
+              "name_raw": "Cable Curl",
+              "qualifiers": [],
+              "settings": "seat 2",
+              "tracked": true,
+              "untracked_sets": null,
+              "comment": null,
+              "raw": "Cable Curl - seat 2 - set 1 - 50lbs - 8 reps 1 RIR - set 2 - 8 reps 1 RIR",
+              "position": 1,
+              "variant": "cable_curl",
+              "excluded": false,
+              "sets": [
+                {
+                  "set_number": 1,
+                  "weight": 50.0,
+                  "weight_inferred": false,
+                  "weight_note": null,
+                  "reps": 8.0,
+                  "rir_low": 1.0,
+                  "rir_high": 1.0,
+                  "logged": true,
+                  "comment": null,
+                  "raw": "50lbs - 8 reps 1 RIR"
+                },
+                {
+                  "set_number": 2,
+                  "weight": 50.0,
+                  "weight_inferred": true,
+                  "weight_note": null,
+                  "reps": 8.0,
+                  "rir_low": 1.0,
+                  "rir_high": 1.0,
+                  "logged": true,
+                  "comment": null,
+                  "raw": "8 reps 1 RIR"
+                },
+                {
+                  "set_number": 3,
+                  "weight": null,
+                  "weight_inferred": false,
+                  "weight_note": null,
+                  "reps": null,
+                  "rir_low": null,
+                  "rir_high": null,
+                  "logged": false,
+                  "comment": null,
+                  "raw": ""
+                }
+              ]
+            },
+            {
+              "name": "warmup",
+              "name_raw": "warmup",
+              "qualifiers": [],
+              "settings": null,
+              "tracked": false,
+              "untracked_sets": 2,
+              "comment": null,
+              "raw": "2 sets warmup",
+              "position": 2,
+              "variant": null,
+              "excluded": false,
+              "sets": []
+            },
+            {
+              "name": "Bad Exercise",
+              "name_raw": "Bad Exercise",
+              "qualifiers": [],
+              "settings": null,
+              "tracked": true,
+              "untracked_sets": null,
+              "comment": null,
+              "raw": "Bad Exercise - 10lbs - 5 reps",
+              "position": 3,
+              "variant": null,
+              "excluded": true,
+              "sets": [
+                {
+                  "set_number": 1,
+                  "weight": 10.0,
+                  "weight_inferred": false,
+                  "weight_note": null,
+                  "reps": 5.0,
+                  "rir_low": null,
+                  "rir_high": null,
+                  "logged": true,
+                  "comment": null,
+                  "raw": "10lbs - 5 reps"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "block": "test_block",
+      "week": 2,
+      "title": "Test Week 2",
+      "note_id": "note://test/w2",
+      "started_on": "2026-01-08",
+      "date_precision": "week",
+      "override": null,
+      "sessions": [
+        {
+          "day_number": 1,
+          "day_label": "Upper 1",
+          "comment": null,
+          "header_raw": "Upper 1",
+          "implicit": false,
+          "notes": [],
+          "index": 1,
+          "entries": [
+            {
+              "name": "Cable Curl",
+              "name_raw": "Cable Curl",
+              "qualifiers": [],
+              "settings": null,
+              "tracked": true,
+              "untracked_sets": null,
+              "comment": null,
+              "raw": "Cable Curl - 55lbs - 6 reps 1 RIR",
+              "position": 1,
+              "variant": "cable_curl",
+              "excluded": false,
+              "sets": [
+                {
+                  "set_number": 1,
+                  "weight": 55.0,
+                  "weight_inferred": false,
+                  "weight_note": null,
+                  "reps": 6.0,
+                  "rir_low": 1.0,
+                  "rir_high": 1.0,
+                  "logged": true,
+                  "comment": null,
+                  "raw": "55lbs - 6 reps 1 RIR"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "block": "other_block",
+      "week": 1,
+      "title": "Other Week 1",
+      "note_id": "note://test/other1",
+      "started_on": "2026-02-01",
+      "date_precision": "week",
+      "override": "travel",
+      "sessions": [
+        {
+          "day_number": null,
+          "day_label": null,
+          "comment": null,
+          "header_raw": null,
+          "implicit": true,
+          "notes": [],
+          "index": 1,
+          "entries": [
+            {
+              "name": "Cable Curl",
+              "name_raw": "Cable Curl",
+              "qualifiers": [],
+              "settings": null,
+              "tracked": true,
+              "untracked_sets": null,
+              "comment": null,
+              "raw": "Cable Curl - 40lbs - 10 reps",
+              "position": 1,
+              "variant": "cable_curl",
+              "excluded": false,
+              "sets": [
+                {
+                  "set_number": 1,
+                  "weight": 40.0,
+                  "weight_inferred": false,
+                  "weight_note": null,
+                  "reps": 10.0,
+                  "rir_low": null,
+                  "rir_high": null,
+                  "logged": true,
+                  "comment": null,
+                  "raw": "40lbs - 10 reps"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "review": [
+    {
+      "title": "Test Week 1",
+      "note_id": "note://test/w1",
+      "line": 4,
+      "raw": "example",
+      "issue": "RIR but no reps",
+      "resolution": "accepted",
+      "reason": "accepted in review"
+    },
+    {
+      "title": "Test Week 2",
+      "note_id": "note://test/w2",
+      "line": 3,
+      "raw": "fixed line",
+      "issue": "typo",
+      "resolution": "fixed",
+      "reason": "fixed"
+    }
+  ],
+  "variants": [
+    {
+      "slug": "cable_curl",
+      "display": "Cable Curl",
+      "family": "cable curl",
+      "gym": "home",
+      "status": "confirmed",
+      "names": ["cable curl"]
+    }
+  ]
+}
