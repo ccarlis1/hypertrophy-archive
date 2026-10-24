@@ -287,22 +287,21 @@ impl LoggerUi {
             ui.add(egui::TextEdit::singleline(&mut self.untracked_n).desired_width(30.0));
             ui.label("sets of");
             ui.text_edit_singleline(&mut self.untracked_name);
-            if ui.button("Add").clicked() {
-                if let Ok(n) = self.untracked_n.parse::<i32>() {
-                    if !self.untracked_name.trim().is_empty() {
-                        self.drafts.push(DraftEntry {
-                            variant_id: None,
-                            name_raw: self.untracked_name.trim().to_string(),
-                            display: self.untracked_name.trim().to_string(),
-                            settings: String::new(),
-                            tracked: false,
-                            untracked_sets: n,
-                            last_label: String::new(),
-                            sets: Vec::new(),
-                        });
-                        self.untracked_name.clear();
-                    }
-                }
+            if ui.button("Add").clicked()
+                && let Ok(n) = self.untracked_n.parse::<i32>()
+                && !self.untracked_name.trim().is_empty()
+            {
+                self.drafts.push(DraftEntry {
+                    variant_id: None,
+                    name_raw: self.untracked_name.trim().to_string(),
+                    display: self.untracked_name.trim().to_string(),
+                    settings: String::new(),
+                    tracked: false,
+                    untracked_sets: n,
+                    last_label: String::new(),
+                    sets: Vec::new(),
+                });
+                self.untracked_name.clear();
             }
         });
 
@@ -407,11 +406,11 @@ impl LoggerUi {
                 }
             });
         }
-        if let Some(id) = edit_id {
-            if let Some(summary) = self.sessions.iter().find(|s| s.session.id == id).cloned() {
-                self.jump_to_log(&summary);
-                *status = format!("loaded session #{id} into Log");
-            }
+        if let Some(id) = edit_id
+            && let Some(summary) = self.sessions.iter().find(|s| s.session.id == id).cloned()
+        {
+            self.jump_to_log(&summary);
+            *status = format!("loaded session #{id} into Log");
         }
 
         if let Some(id) = open_id {
@@ -701,21 +700,21 @@ impl LoggerUi {
             },
         ];
 
-        if let Ok(Some(lp)) = self.with_db(|db| db.last_performance(v.id)) {
-            if !lp.sets.is_empty() {
-                sets = lp
-                    .sets
-                    .iter()
-                    .map(|s| DraftSet {
-                        weight: s.weight.map(|w| w.to_string()).unwrap_or_default(),
-                        reps: s.reps.map(|r| r.to_string()).unwrap_or_default(),
-                        rir_low: s.rir_low.map(|r| r.to_string()).unwrap_or_default(),
-                        rir_high: s.rir_high.map(|r| r.to_string()).unwrap_or_default(),
-                        comment: String::new(),
-                        logged: true,
-                    })
-                    .collect();
-            }
+        if let Ok(Some(lp)) = self.with_db(|db| db.last_performance(v.id))
+            && !lp.sets.is_empty()
+        {
+            sets = lp
+                .sets
+                .iter()
+                .map(|s| DraftSet {
+                    weight: s.weight.map(|w| w.to_string()).unwrap_or_default(),
+                    reps: s.reps.map(|r| r.to_string()).unwrap_or_default(),
+                    rir_low: s.rir_low.map(|r| r.to_string()).unwrap_or_default(),
+                    rir_high: s.rir_high.map(|r| r.to_string()).unwrap_or_default(),
+                    comment: String::new(),
+                    logged: true,
+                })
+                .collect();
         }
 
         self.drafts.push(DraftEntry {
