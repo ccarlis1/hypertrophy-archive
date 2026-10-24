@@ -38,6 +38,8 @@ pub struct ImportReport {
     pub review_fixed: usize,
     pub outliers: Vec<Outlier>,
     pub stale_notes: Vec<String>,
+    /// (old note_id, new note_id) for weeks whose note was re-created.
+    pub notes_replaced: Vec<(String, String)>,
     pub inferred_detail: Vec<InferredWeight>,
 }
 
@@ -215,13 +217,20 @@ pub fn import_grouped(
         // previous import of this week under another note, leave them — note_id is the key.
         if target.note_id.as_deref() == Some(cycle.note_id.as_str()) {
             // already cleared above
-        } else if target.note_id.is_some() {
-            // Week occupied by a different note: clear its import rows first? Plan keys on
-            // note_id only, so a different note for the same week is a data error.
-            return Err(format!(
-                "block {} week {} already has note_id {:?}; cannot attach {}",
-                cycle.block, cycle.week, target.note_id, cycle.note_id
-            ));
+        } else if let Some(old_note) = target.note_id.as_deref() {
+            // Week occupied by a different note. Two notes for one week in the same file is
+            // a data error; an old note missing from the file was re-created (new id), so
+            // its import rows are replaced by the new note's.
+            if incoming_notes.contains(old_note) {
+                return Err(format!(
+                    "block {} week {} has two notes in the file: {} and {}",
+                    cycle.block, cycle.week, old_note, cycle.note_id
+                ));
+            }
+            db.delete_notes_import_sessions(target.id)?;
+            report
+                .notes_replaced
+                .push((old_note.to_string(), cycle.note_id.clone()));
         } else {
             // Fresh week or app-created cycle: remove any leftover notes_import sessions
             // from a prior partial import of this week without a note_id.
@@ -496,6 +505,15 @@ pub fn format_report(report: &ImportReport, verbose: bool) -> String {
         ));
         for n in &report.stale_notes {
             out.push_str(&format!("  {n}\n"));
+        }
+    }
+    if !report.notes_replaced.is_empty() {
+        out.push_str(&format!(
+            "Re-created notes (old note replaced): {}\n",
+            report.notes_replaced.len()
+        ));
+        for (old, new) in &report.notes_replaced {
+            out.push_str(&format!("  {old} -> {new}\n"));
         }
     }
     if verbose && !report.inferred_detail.is_empty() {

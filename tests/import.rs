@@ -350,6 +350,48 @@ fn moving_note_id_to_another_week_leaves_no_leftovers() {
 }
 
 #[test]
+fn recreated_note_replaces_old_note_for_same_week() {
+    let db = temp_db();
+    let data = load_grouped(&fixture_path()).unwrap();
+    import_grouped(&db, &data, &ImportOptions::default()).unwrap();
+    let before = db.get_cycle_by_note_id("note://test/w1").unwrap().unwrap();
+    let sessions_before = db.count_sessions_for_cycle(before.id).unwrap();
+
+    // Same week, new note id (note duplicated or re-created in Apple Notes).
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture_path()).unwrap()).unwrap();
+    value["cycles"][0]["note_id"] = serde_json::json!("note://test/w1-recreated");
+    let modified: GroupedFile = serde_json::from_value(value).unwrap();
+    let report = import_grouped(&db, &modified, &ImportOptions::default()).unwrap();
+
+    assert_eq!(
+        report.notes_replaced,
+        vec![("note://test/w1".to_string(), "note://test/w1-recreated".to_string())]
+    );
+    assert!(report.stale_notes.is_empty(), "{:?}", report.stale_notes);
+    assert!(db.get_cycle_by_note_id("note://test/w1").unwrap().is_none());
+    let after = db
+        .get_cycle_by_note_id("note://test/w1-recreated")
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.id, before.id);
+    assert_eq!(db.count_sessions_for_cycle(after.id).unwrap(), sessions_before);
+}
+
+#[test]
+fn two_notes_for_one_week_in_the_file_is_an_error() {
+    let db = temp_db();
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture_path()).unwrap()).unwrap();
+    let mut dup = value["cycles"][0].clone();
+    dup["note_id"] = serde_json::json!("note://test/w1-dup");
+    value["cycles"].as_array_mut().unwrap().push(dup);
+    let data: GroupedFile = serde_json::from_value(value).unwrap();
+    let err = import_grouped(&db, &data, &ImportOptions::default()).unwrap_err();
+    assert!(err.contains("two notes"), "{err}");
+}
+
+#[test]
 fn dry_run_writes_nothing() {
     let db = temp_db();
     let data = load_grouped(&fixture_path()).unwrap();
