@@ -932,14 +932,18 @@ fn map_set(row: &rusqlite::Row<'_>) -> rusqlite::Result<SetLog> {
 mod tests {
     use super::*;
     use crate::log::GroupedVariant;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_db() -> Db {
+        // Tests run in parallel and the clock can repeat, so add a counter.
+        static N: AtomicUsize = AtomicUsize::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("ha_test_{nanos}.db"));
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("ha_test_{nanos}_{n}.db"));
         open(&path).expect("open temp db")
     }
 

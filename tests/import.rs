@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hypertrophy_archive::db::Db;
@@ -20,11 +21,14 @@ fn fixture_path() -> PathBuf {
 }
 
 fn temp_db() -> Db {
+    // Tests run in parallel and the clock can repeat, so add a counter.
+    static N: AtomicUsize = AtomicUsize::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("ha_import_test_{nanos}.db"));
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("ha_import_test_{nanos}_{n}.db"));
     Db::open(&path).expect("open temp db")
 }
 
