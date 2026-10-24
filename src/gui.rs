@@ -1,4 +1,4 @@
-use crate::models::*;
+use hypertrophy_archive::models::*;
 use eframe::egui;
 use egui::{Color32, RichText, Ui, InnerResponse};
 use std::collections::HashMap;
