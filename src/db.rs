@@ -379,29 +379,25 @@ impl Db {
             .map_err(|e| format!("list imported note_ids: {e}"))
     }
 
-    /// Insert an alias only if the normalized name is not already taken.
-    pub fn insert_alias_if_absent(
-        &self,
-        normalized: &str,
-        variant_id: i64,
-        status: AliasStatus,
-    ) -> Result<bool, String> {
-        let n = self
-            .conn
-            .execute(
-                "INSERT OR IGNORE INTO alias (normalized, variant_id, status) VALUES (?1, ?2, ?3)",
-                params![normalized, variant_id, status.as_str()],
-            )
-            .map_err(|e| format!("insert alias if absent: {e}"))?;
-        Ok(n > 0)
-    }
-
-    /// Create a variant only if the slug is missing. Returns (id, created).
-    pub fn ensure_variant(&self, v: &NewVariant) -> Result<(i64, bool), String> {
-        if let Some(existing) = self.get_variant_by_slug(&v.slug)? {
-            return Ok((existing.id, false));
+    /// Create a variant, or update the fields the import owns (display, family, gym,
+    /// status) on an existing one. joint_action, equipment, load_unit and
+    /// default_settings are set in the app and kept. Returns (id, created, updated).
+    pub fn upsert_import_variant(&self, v: &NewVariant) -> Result<(i64, bool, bool), String> {
+        let Some(mut existing) = self.get_variant_by_slug(&v.slug)? else {
+            return Ok((self.create_variant(v)?, true, false));
+        };
+        let changed = existing.display != v.display
+            || existing.family != v.family
+            || existing.gym != v.gym
+            || existing.status != v.status;
+        if changed {
+            existing.display = v.display.clone();
+            existing.family = v.family.clone();
+            existing.gym = v.gym.clone();
+            existing.status = v.status;
+            self.update_variant(&existing)?;
         }
-        Ok((self.create_variant(v)?, true))
+        Ok((existing.id, false, changed))
     }
 
     /// Exposed for import transactions (dry-run rollback / commit).

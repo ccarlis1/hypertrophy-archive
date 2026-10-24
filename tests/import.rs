@@ -392,6 +392,53 @@ fn two_notes_for_one_week_in_the_file_is_an_error() {
 }
 
 #[test]
+fn reimport_updates_variants_and_moves_aliases() {
+    let db = temp_db();
+    let data = load_grouped(&fixture_path()).unwrap();
+    import_grouped(&db, &data, &ImportOptions::default()).unwrap();
+    db.link_variant("cable_curl", "elbow_flexion_cable").unwrap();
+
+    // aliases.toml edit: rename cable_curl, and give its name to a new variant listed first.
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture_path()).unwrap()).unwrap();
+    value["variants"][0]["display"] = serde_json::json!("Cable Curl (Bar)");
+    value["variants"][0]["names"] = serde_json::json!(["bar cable curl"]);
+    let rope = serde_json::json!({
+        "slug": "rope_cable_curl", "display": "Rope Cable Curl", "family": "cable curl",
+        "gym": "home", "status": "confirmed", "names": ["cable curl"]
+    });
+    value["variants"].as_array_mut().unwrap().insert(0, rope);
+    let modified: GroupedFile = serde_json::from_value(value).unwrap();
+    let report = import_grouped(&db, &modified, &ImportOptions::default()).unwrap();
+
+    assert_eq!(report.variants_created, 1);
+    assert_eq!(report.variants_updated, 1);
+    assert_eq!(report.aliases_moved, 1);
+    assert!(report.variants_not_in_file.is_empty());
+    let curl = db.get_variant_by_slug("cable_curl").unwrap().unwrap();
+    assert_eq!(curl.display, "Cable Curl (Bar)");
+    assert_eq!(curl.joint_action.as_deref(), Some("elbow_flexion_cable"));
+    let rope = db.get_variant_by_slug("rope_cable_curl").unwrap().unwrap();
+    let aliases = db.list_aliases().unwrap();
+    let alias_of = |name: &str| aliases.iter().find(|a| a.normalized == name).unwrap().variant_id;
+    assert_eq!(alias_of("cable curl"), rope.id);
+    assert_eq!(alias_of("bar cable curl"), curl.id);
+
+    // Same file again: nothing left to change.
+    let again = import_grouped(&db, &modified, &ImportOptions::default()).unwrap();
+    assert_eq!((again.variants_created, again.variants_updated, again.aliases_moved), (0, 0, 0));
+
+    // A variant the file drops is kept and reported.
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture_path()).unwrap()).unwrap();
+    value["variants"][0]["display"] = serde_json::json!("Cable Curl (Bar)");
+    let dropped: GroupedFile = serde_json::from_value(value).unwrap();
+    let r = import_grouped(&db, &dropped, &ImportOptions::default()).unwrap();
+    assert_eq!(r.variants_not_in_file, vec!["rope_cable_curl".to_string()]);
+    assert!(db.get_variant_by_slug("rope_cable_curl").unwrap().is_some());
+}
+
+#[test]
 fn dry_run_writes_nothing() {
     let db = temp_db();
     let data = load_grouped(&fixture_path()).unwrap();

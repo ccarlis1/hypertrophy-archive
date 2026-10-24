@@ -29,6 +29,10 @@ pub struct ImportReport {
     pub sets_written: usize,
     pub app_sessions_preserved: usize,
     pub variants_created: usize,
+    pub variants_updated: usize,
+    pub aliases_moved: usize,
+    /// Variants in the database that the file doesn't list. Kept, not deleted.
+    pub variants_not_in_file: Vec<String>,
     pub excluded_entries: usize,
     pub inferred_weights: usize,
     pub unmapped: Vec<UnmappedEntry>,
@@ -106,14 +110,22 @@ pub fn import_grouped(
         block_ids.insert(b.slug.clone(), id);
     }
 
-    // Variants (insert-only) + missing aliases
+    // Variants + aliases. The file is the source of truth for both, so re-imports pick up
+    // renames and merges from aliases.toml. A name listed under several variants goes to
+    // the first one in the file, the same choice a fresh import makes.
     let mut variant_ids: HashMap<String, i64> = HashMap::new();
+    let current_aliases: HashMap<String, i64> = db
+        .list_aliases()?
+        .into_iter()
+        .map(|a| (a.normalized, a.variant_id))
+        .collect();
+    let mut seen_names: HashSet<String> = HashSet::new();
     for v in &data.variants {
         let status = AliasStatus::parse(&v.status).unwrap_or(AliasStatus::Suggested);
         if status != AliasStatus::Confirmed {
             report.unconfirmed_variants.push(v.slug.clone());
         }
-        let (id, created) = db.ensure_variant(&NewVariant {
+        let (id, created, updated) = db.upsert_import_variant(&NewVariant {
             slug: v.slug.clone(),
             display: v.display.clone(),
             family: v.family.clone(),
@@ -127,19 +139,31 @@ pub fn import_grouped(
         if created {
             report.variants_created += 1;
         }
+        if updated {
+            report.variants_updated += 1;
+        }
         variant_ids.insert(v.slug.clone(), id);
         for name in &v.names {
             let normalized = name.trim().to_lowercase();
-            if normalized.is_empty() {
+            if normalized.is_empty() || !seen_names.insert(normalized.clone()) {
                 continue;
             }
-            let _ = db.insert_alias_if_absent(&normalized, id, status)?;
+            if current_aliases.get(&normalized).is_some_and(|&old| old != id) {
+                report.aliases_moved += 1;
+            }
+            db.upsert_alias(&normalized, id, status)?;
         }
     }
-    // Also index any variants already in the DB that the file references.
+    // Also index any variants already in the DB that the file references, and list the
+    // ones the file no longer has (merged away, or created in the app). They are kept.
+    let file_slugs: HashSet<&str> = data.variants.iter().map(|v| v.slug.as_str()).collect();
     for v in db.list_variants()? {
+        if !file_slugs.contains(v.slug.as_str()) {
+            report.variants_not_in_file.push(v.slug.clone());
+        }
         variant_ids.entry(v.slug).or_insert(v.id);
     }
+    report.variants_not_in_file.sort();
 
     for cycle in &data.cycles {
         let hash = cycle_source_hash(cycle)?;
@@ -471,9 +495,19 @@ pub fn format_report(report: &ImportReport, verbose: bool) -> String {
         report.app_sessions_preserved
     ));
     out.push_str(&format!(
-        "Variants created: {}; excluded entries: {}; inferred weights: {}\n",
-        report.variants_created, report.excluded_entries, report.inferred_weights
+        "Variants: {} created, {} updated, {} aliases moved; excluded entries: {}; inferred weights: {}\n",
+        report.variants_created,
+        report.variants_updated,
+        report.aliases_moved,
+        report.excluded_entries,
+        report.inferred_weights
     ));
+    if !report.variants_not_in_file.is_empty() {
+        out.push_str(&format!(
+            "Variants in the database but not the file (kept): {}\n",
+            report.variants_not_in_file.join(", ")
+        ));
+    }
     out.push_str(&format!(
         "Review: {} open, {} accepted, {} fixed\n",
         report.review_open, report.review_accepted, report.review_fixed
