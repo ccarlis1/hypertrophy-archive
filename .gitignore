@@ -50,3 +50,6 @@ Desktop.ini
 /exports/
 /overrides/
 /tests/fixtures/private/
+
+# Python bytecode
+__pycache__/
