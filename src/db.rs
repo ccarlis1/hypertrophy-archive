@@ -60,6 +60,49 @@ pub fn default_db_path() -> Result<PathBuf, String> {
     Ok(data_dir()?.join("log.db"))
 }
 
+/// How many `<db>.bak-*` copies `backup` keeps next to the database.
+pub const BACKUPS_KEPT: usize = 10;
+
+/// Copy the database to `<name>.bak-<timestamp>` next to it, never overwriting an
+/// earlier backup, then delete the oldest backups beyond `keep`. Returns the new
+/// backup's path, or None when the database doesn't exist yet.
+pub fn backup(db_path: &Path, keep: usize) -> Result<Option<PathBuf>, String> {
+    if !db_path.exists() {
+        return Ok(None);
+    }
+    let name = db_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("log.db");
+    let prefix = format!("{name}.bak-");
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
+    let mut bak = db_path.with_file_name(format!("{prefix}{stamp}"));
+    let mut n = 1;
+    while bak.exists() {
+        bak = db_path.with_file_name(format!("{prefix}{stamp}-{n}"));
+        n += 1;
+    }
+    fs::copy(db_path, &bak).map_err(|e| format!("backup {}: {e}", db_path.display()))?;
+
+    // Timestamps sort by name, so the oldest backups come first.
+    let dir = db_path.parent().unwrap_or(Path::new("."));
+    let mut backups: Vec<PathBuf> = fs::read_dir(dir)
+        .map_err(|e| format!("list backups in {}: {e}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|s| s.to_str())
+                .is_some_and(|s| s.starts_with(&prefix))
+        })
+        .collect();
+    backups.sort();
+    let excess = backups.len().saturating_sub(keep.max(1));
+    for old in &backups[..excess] {
+        fs::remove_file(old).map_err(|e| format!("remove old backup {}: {e}", old.display()))?;
+    }
+    Ok(Some(bak))
+}
+
 pub fn open(path: &Path) -> Result<Db, String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create data dir: {e}"))?;
@@ -1174,6 +1217,32 @@ mod tests {
         assert_eq!(path, dir.join("log.db"));
         unsafe { std::env::remove_var("HA_DATA_DIR") };
         let _ = open(&path).unwrap();
+    }
+
+    #[test]
+    fn backups_never_overwrite_and_keep_the_newest() {
+        let db = temp_db();
+        let dir = std::env::temp_dir().join(format!(
+            "ha_backup_{}",
+            db.path().file_stem().unwrap().to_str().unwrap()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("log.db");
+        fs::copy(db.path(), &path).unwrap();
+        assert!(backup(&dir.join("missing.db"), 3).unwrap().is_none());
+
+        // Back-to-back calls land in the same millisecond often enough to matter.
+        let made: Vec<PathBuf> = (0..5)
+            .map(|_| backup(&path, 3).unwrap().unwrap())
+            .collect();
+        let mut left: Vec<PathBuf> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.to_str().unwrap().contains(".bak-"))
+            .collect();
+        left.sort();
+        assert_eq!(left, made[2..].to_vec(), "keeps the 3 newest, all distinct");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

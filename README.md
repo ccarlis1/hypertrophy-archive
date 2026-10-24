@@ -44,7 +44,7 @@ ha import exports/grouped.json --dry-run   # report only
 ha import exports/grouped.json -v          # include inferred-weight list
 ```
 
-`ha import` backs up `log.db` before writing, replaces only `source='notes_import'`
+`ha import` backs up `log.db` before writing (keeping the 10 newest backups), replaces only `source='notes_import'`
 rows for each note, and never touches `source='app'` sessions. Seed variants
 without importing history with `ha variants seed exports/grouped.json`.
 

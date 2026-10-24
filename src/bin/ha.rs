@@ -1,9 +1,7 @@
-use std::fs;
 use std::path::PathBuf;
 
-use chrono::Local;
 use clap::{Parser, Subcommand};
-use hypertrophy_archive::db::Db;
+use hypertrophy_archive::db::{self, Db};
 use hypertrophy_archive::import::{format_report, import_grouped, load_grouped, ImportOptions};
 
 #[derive(Parser)]
@@ -69,22 +67,6 @@ fn open_db(path: Option<PathBuf>) -> Result<Db, String> {
         Some(p) => Db::open(p),
         None => Db::open_default(),
     }
-}
-
-fn backup_db(db_path: &std::path::Path) -> Result<Option<PathBuf>, String> {
-    if !db_path.exists() {
-        return Ok(None);
-    }
-    let stamp = Local::now().format("%Y%m%d-%H%M%S");
-    let bak = db_path.with_file_name(format!(
-        "{}.bak-{stamp}",
-        db_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("log.db")
-    ));
-    fs::copy(db_path, &bak).map_err(|e| format!("backup {}: {e}", db_path.display()))?;
-    Ok(Some(bak))
 }
 
 fn main() {
@@ -217,10 +199,10 @@ fn run() -> Result<(), String> {
             force,
             verbose,
         } => {
-            if !dry_run {
-                if let Some(bak) = backup_db(db.path())? {
-                    println!("backed up database to {}", bak.display());
-                }
+            if !dry_run
+                && let Some(bak) = db::backup(db.path(), db::BACKUPS_KEPT)?
+            {
+                println!("backed up database to {}", bak.display());
             }
             let data = load_grouped(&path)?;
             let report = import_grouped(
