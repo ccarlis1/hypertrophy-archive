@@ -323,7 +323,7 @@ impl LoggerUi {
                                 .color(Color32::LIGHT_GRAY),
                         );
                     }
-                    if ui.small_button("✕").clicked() {
+                    if ui.small_button("🗑").on_hover_text("Remove this exercise").clicked() {
                         remove_idx = Some(i);
                     }
                 });
@@ -335,7 +335,7 @@ impl LoggerUi {
                     let mut remove_set = None;
                     for (si, set) in draft.sets.iter_mut().enumerate() {
                         ui.horizontal(|ui| {
-                            if ui.small_button("✕").on_hover_text("Delete this set").clicked() {
+                            if ui.small_button("🗑").on_hover_text("Delete this set").clicked() {
                                 remove_set = Some(si);
                             }
                             ui.label(format!("set {}", si + 1));
