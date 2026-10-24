@@ -141,7 +141,8 @@ fn run() -> Result<(), String> {
                     }
                 } else {
                     let n = e.untracked_sets.unwrap_or(0);
-                    println!("{}. untracked: {n} sets of {label}", e.position);
+                    let sets = if n == 1 { "set" } else { "sets" };
+                    println!("{}. untracked: {n} {sets} of {label}", e.position);
                 }
                 if let Some(c) = &e.comment {
                     println!("   entry comment: {c}");

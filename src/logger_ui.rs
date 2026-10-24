@@ -367,7 +367,8 @@ impl LoggerUi {
                         });
                     }
                 } else {
-                    ui.label(format!("untracked: {} sets", draft.untracked_sets));
+                    let n = draft.untracked_sets;
+                    ui.label(format!("untracked: {n} {}", if n == 1 { "set" } else { "sets" }));
                 }
             });
         }
