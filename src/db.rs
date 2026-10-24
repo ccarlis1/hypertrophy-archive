@@ -782,3 +782,252 @@ fn map_set(row: &rusqlite::Row<'_>) -> rusqlite::Result<SetLog> {
         raw: row.get(11)?,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::log::GroupedVariant;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_db() -> Db {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ha_test_{nanos}.db"));
+        open(&path).expect("open temp db")
+    }
+
+    #[test]
+    fn migrate_and_round_trip_example_week_shapes() {
+        let db = temp_db();
+        let block_id = db
+            .create_block(&NewBlock {
+                slug: "log_book".into(),
+                name: "Log Book".into(),
+                split: Split::UpperLower,
+                label: Some("home".into()),
+                started_on: None,
+            })
+            .unwrap();
+        let cycle_id = db
+            .create_cycle(&NewCycle {
+                block_id,
+                week: 1,
+                title: Some("Week 1".into()),
+                note_id: None,
+                started_on: None,
+                date_precision: DatePrecision::Week,
+                override_flag: false,
+                source: Source::App,
+                source_hash: None,
+            })
+            .unwrap();
+        let session_id = db
+            .create_session(&NewSession {
+                cycle_id,
+                day_number: Some(1),
+                day_label: Some("Upper 1".into()),
+                comment: None,
+                header_raw: Some("Upper 1".into()),
+                implicit: false,
+                index: 0,
+                notes: vec!["session note".into()],
+                performed_on: Some("2026-10-20".into()),
+                date_precision: DatePrecision::Exact,
+                source: Source::App,
+            })
+            .unwrap();
+
+        let variant_id = db
+            .create_variant(&NewVariant {
+                slug: "flat_smith_press".into(),
+                display: "Flat Smith Press".into(),
+                family: Some("press".into()),
+                gym: Some("home".into()),
+                status: AliasStatus::Confirmed,
+                joint_action: None,
+                equipment: None,
+                load_unit: "lb".into(),
+                default_settings: None,
+            })
+            .unwrap();
+        db.upsert_alias("flat smith press", variant_id, AliasStatus::Confirmed)
+            .unwrap();
+
+        // Tracked entry with RIR range + blank second set (like LF Preacher Curl)
+        db.add_entry_with_sets(
+            &NewEntry {
+                session_id,
+                variant_id: Some(variant_id),
+                position: 1,
+                tracked: true,
+                name: Some("Flat Smith Press".into()),
+                name_raw: "Flat Smith Press".into(),
+                qualifiers: Vec::new(),
+                untracked_sets: None,
+                settings: None,
+                comment: None,
+                raw: None,
+                excluded: false,
+            },
+            &[
+                NewSet {
+                    set_number: 1,
+                    weight: Some(185.0),
+                    weight_inferred: false,
+                    weight_note: None,
+                    reps: Some(5.0),
+                    rir_low: Some(1.0),
+                    rir_high: Some(1.0),
+                    logged: true,
+                    comment: None,
+                    raw: None,
+                },
+                NewSet {
+                    set_number: 2,
+                    weight: Some(165.0),
+                    weight_inferred: false,
+                    weight_note: None,
+                    reps: Some(6.0),
+                    rir_low: Some(1.0),
+                    rir_high: Some(2.0),
+                    logged: true,
+                    comment: None,
+                    raw: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        let preacher = db
+            .create_variant(&NewVariant {
+                slug: "lf_preacher_curl".into(),
+                display: "LF Preacher Curl".into(),
+                family: None,
+                gym: None,
+                status: AliasStatus::Confirmed,
+                joint_action: None,
+                equipment: None,
+                load_unit: "lb".into(),
+                default_settings: None,
+            })
+            .unwrap();
+        db.add_entry_with_sets(
+            &NewEntry {
+                session_id,
+                variant_id: Some(preacher),
+                position: 2,
+                tracked: true,
+                name: Some("LF Preacher Curl".into()),
+                name_raw: "LF Preacher Curl".into(),
+                qualifiers: Vec::new(),
+                untracked_sets: None,
+                settings: None,
+                comment: None,
+                raw: None,
+                excluded: false,
+            },
+            &[
+                NewSet {
+                    set_number: 1,
+                    weight: Some(105.0),
+                    weight_inferred: false,
+                    weight_note: None,
+                    reps: Some(5.0),
+                    rir_low: Some(1.0),
+                    rir_high: Some(1.0),
+                    logged: true,
+                    comment: None,
+                    raw: None,
+                },
+                NewSet {
+                    set_number: 2,
+                    weight: None,
+                    weight_inferred: false,
+                    weight_note: None,
+                    reps: None,
+                    rir_low: None,
+                    rir_high: None,
+                    logged: false,
+                    comment: None,
+                    raw: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        // Untracked: "2 sets abduction warmup"
+        db.add_entry_with_sets(
+            &NewEntry {
+                session_id,
+                variant_id: None,
+                position: 3,
+                tracked: false,
+                name: Some("abduction warmup".into()),
+                name_raw: "abduction warmup".into(),
+                qualifiers: Vec::new(),
+                untracked_sets: Some(2),
+                settings: None,
+                comment: None,
+                raw: None,
+                excluded: false,
+            },
+            &[],
+        )
+        .unwrap();
+
+        let detail = db.get_session_detail(session_id).unwrap().unwrap();
+        assert_eq!(detail.entries.len(), 3);
+        assert_eq!(detail.entries[0].sets[1].rir_low, Some(1.0));
+        assert_eq!(detail.entries[0].sets[1].rir_high, Some(2.0));
+        assert!(!detail.entries[1].sets[1].logged);
+        assert_eq!(detail.entries[2].entry.untracked_sets, Some(2));
+        assert_eq!(detail.session.notes, vec!["session note".to_string()]);
+
+        let last = db.last_performance(variant_id).unwrap().unwrap();
+        assert_eq!(last.sets[0].weight, Some(185.0));
+
+        let found = db.search_variants("smith").unwrap();
+        assert!(found.iter().any(|v| v.slug == "flat_smith_press"));
+    }
+
+    #[test]
+    fn seed_variants_from_inline_grouped() {
+        let db = temp_db();
+        let n = db
+            .seed_variants(&GroupedSeed {
+                variants: vec![GroupedVariant {
+                    slug: "lateral_raise_db".into(),
+                    display: "Lateral Raise".into(),
+                    family: Some("lateral_raise".into()),
+                    gym: Some("home".into()),
+                    status: "confirmed".into(),
+                    names: vec!["lateral raise".into(), "Lat Raise".into()],
+                }],
+            })
+            .unwrap();
+        assert_eq!(n, 1);
+        let v = db.get_variant_by_slug("lateral_raise_db").unwrap().unwrap();
+        assert_eq!(v.display, "Lateral Raise");
+        let aliases = db.list_aliases().unwrap();
+        assert!(aliases.iter().any(|a| a.normalized == "lateral raise"));
+        assert!(aliases.iter().any(|a| a.normalized == "lat raise"));
+    }
+
+    #[test]
+    fn ha_data_dir_env_override() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ha_datadir_{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        // SAFETY: test-only, single-threaded test process for this env key
+        unsafe { std::env::set_var("HA_DATA_DIR", &dir) };
+        let path = default_db_path().unwrap();
+        assert_eq!(path, dir.join("log.db"));
+        unsafe { std::env::remove_var("HA_DATA_DIR") };
+        let _ = open(&path).unwrap();
+    }
+}
