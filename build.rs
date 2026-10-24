@@ -1,10 +1,11 @@
-use std::io;
-use winres::WindowsResource;
+fn main() {
+    #[cfg(windows)]
+    compile_windows_resources();
+}
 
-fn main() -> io::Result<()> {
-    if cfg!(target_os = "windows") {
-        WindowsResource::new()
-            .compile()?;
-    }
-    Ok(())
+#[cfg(windows)]
+fn compile_windows_resources() {
+    winres::WindowsResource::new()
+        .compile()
+        .expect("failed to compile Windows resources");
 }
