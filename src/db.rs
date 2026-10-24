@@ -12,6 +12,7 @@ use crate::log::{
 };
 
 const MIGRATION_001: &str = include_str!("../migrations/001_init.sql");
+const MIGRATION_002: &str = include_str!("../migrations/002_import.sql");
 
 #[derive(Debug)]
 pub struct Db {
@@ -71,7 +72,19 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         conn.execute_batch("PRAGMA user_version = 1;")
             .map_err(|e| format!("set user_version: {e}"))?;
     }
+    if version < 2 {
+        conn.execute_batch(MIGRATION_002)
+            .map_err(|e| format!("apply migration 002: {e}"))?;
+        conn.execute_batch("PRAGMA user_version = 2;")
+            .map_err(|e| format!("set user_version: {e}"))?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+fn user_version(conn: &Connection) -> Result<i32, String> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| format!("read user_version: {e}"))
 }
 
 fn json_list(values: &[String]) -> String {
@@ -1029,5 +1042,54 @@ mod tests {
         assert_eq!(path, dir.join("log.db"));
         unsafe { std::env::remove_var("HA_DATA_DIR") };
         let _ = open(&path).unwrap();
+    }
+
+    #[test]
+    fn fresh_db_lands_at_user_version_2() {
+        let db = temp_db();
+        assert_eq!(user_version(&db.conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn migrate_upgrades_v1_db_and_keeps_rows() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ha_v1_{nanos}.db"));
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+            conn.execute_batch(MIGRATION_001).unwrap();
+            conn.execute_batch("PRAGMA user_version = 1;").unwrap();
+            conn.execute(
+                "INSERT INTO block (slug, name, split) VALUES ('b', 'B', 'other')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO cycle (block_id, week, note_id, source) VALUES (1, 1, 'note-a', 'notes_import')",
+                [],
+            )
+            .unwrap();
+            assert_eq!(user_version(&conn).unwrap(), 1);
+        }
+        let db = open(&path).unwrap();
+        assert_eq!(user_version(&db.conn).unwrap(), 2);
+        let cycle = db.get_cycle_by_block_week(1, 1).unwrap().unwrap();
+        assert_eq!(cycle.note_id.as_deref(), Some("note-a"));
+        // Unique note_id is enforced after upgrade.
+        let err = db.create_cycle(&NewCycle {
+            block_id: 1,
+            week: 2,
+            title: None,
+            note_id: Some("note-a".into()),
+            started_on: None,
+            date_precision: DatePrecision::Week,
+            override_flag: false,
+            source: Source::NotesImport,
+            source_hash: None,
+        });
+        assert!(err.is_err(), "duplicate note_id should fail: {err:?}");
     }
 }
