@@ -120,7 +120,8 @@ variants, because their weights aren't comparable.
 
 ### Progress: long-term charts
 The data loads when you open the tab. Click **Reload** after logging, importing or
-linking variants. There are three views:
+linking variants. Sessions dated only to the week are spread evenly across that week on
+the time charts, so they don't stack on one date. There are three views:
 - **Variant:** e1RM over time, with e5RM next to it (untick **e5RM** to hide it). PRs are
   yellow diamonds and stalled sessions are red dots. Below the chart, **Sessions** lists
   the top set, best set and % change from baseline, and **Rep PRs** shows the most reps

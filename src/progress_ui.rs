@@ -1,5 +1,6 @@
 //! Progress tab: strength charts per variant and joint action, weekly sets per muscle.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::NaiveDate;
@@ -7,7 +8,7 @@ use eframe::egui;
 use egui::plot::{Bar, BarChart, Legend, Line, MarkerShape, Plot, PlotPoints, Points};
 use egui::{Color32, RichText, Ui};
 use hypertrophy_archive::db::Db;
-use hypertrophy_archive::log::SetRow;
+use hypertrophy_archive::log::{DatePrecision, SetRow};
 use hypertrophy_archive::metrics::{self, Params, SessionStrength, VariantInfo, WeekVolume};
 use hypertrophy_archive::models::{load_archive, Archive};
 
@@ -197,11 +198,13 @@ impl ProgressUi {
             );
         }
 
+        let days = plot_days(&history);
         let pts = |f: fn(&SessionStrength) -> f64, keep: fn(&SessionStrength) -> bool| -> Vec<[f64; 2]> {
             history
                 .iter()
-                .filter(|s| keep(s))
-                .filter_map(|s| Some([day_of(s.performed_on.as_deref()?)?, f(s)]))
+                .zip(&days)
+                .filter(|(s, _)| keep(s))
+                .filter_map(|(s, d)| Some([(*d)?, f(s)]))
                 .collect()
         };
         let e1 = pts(|s| s.e1rm, |_| true);
@@ -232,6 +235,7 @@ impl ProgressUi {
                         .color(PR_COLOR),
                 );
             });
+        week_dates_note(ui);
 
         ui.collapsing("Sessions", |ui| {
             egui::Grid::new("progress_sessions").striped(true).show(ui, |ui| {
@@ -297,7 +301,8 @@ impl ProgressUi {
                     let pts: Vec<[f64; 2]> = s
                         .sessions
                         .iter()
-                        .filter_map(|x| Some([day_of(x.performed_on.as_deref()?)?, x.pct_from_baseline]))
+                        .zip(plot_days(&s.sessions))
+                        .filter_map(|(x, d)| Some([d?, x.pct_from_baseline]))
                         .collect();
                     plot_ui.line(
                         Line::new(PlotPoints::from(pts))
@@ -305,6 +310,7 @@ impl ProgressUi {
                     );
                 }
             });
+        week_dates_note(ui);
     }
 
     fn show_muscles(&mut self, ui: &mut Ui) {
@@ -411,6 +417,42 @@ fn date_of(s: &SessionStrength) -> &str {
     s.performed_on.as_deref().unwrap_or("?")
 }
 
+fn week_dates_note(ui: &mut Ui) {
+    ui.label(
+        RichText::new("Sessions dated only to the week are spread across that week, so hover dates are approximate.")
+            .small()
+            .weak(),
+    );
+}
+
+/// x position (days since 1970-01-01) of each session. Sessions dated only to the week
+/// share their week's anchor date, so the k-th of n on one date moves k × 7/n days into
+/// that week instead of stacking on one x.
+fn plot_days(sessions: &[SessionStrength]) -> Vec<Option<f64>> {
+    let week = |s: &SessionStrength| s.date_precision == DatePrecision::Week;
+    let mut count: HashMap<&str, usize> = HashMap::new();
+    for s in sessions.iter().filter(|s| week(s)) {
+        if let Some(d) = s.performed_on.as_deref() {
+            *count.entry(d).or_default() += 1;
+        }
+    }
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    sessions
+        .iter()
+        .map(|s| {
+            let date = s.performed_on.as_deref()?;
+            let day = day_of(date)?;
+            if !week(s) {
+                return Some(day);
+            }
+            let k = seen.entry(date).or_default();
+            let offset = *k as f64 * 7.0 / count[date] as f64;
+            *k += 1;
+            Some(day + offset)
+        })
+        .collect()
+}
+
 /// Days since 1970-01-01, the x axis of the time charts.
 fn day_of(date: &str) -> Option<f64> {
     let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
@@ -440,4 +482,48 @@ fn date_plot(id: impl std::hash::Hash) -> Plot {
                 format!("{name}\n{day}\n{:.1}", p.y)
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session(date: &str, precision: DatePrecision) -> SessionStrength {
+        SessionStrength {
+            session_id: 0,
+            cycle_id: 0,
+            block_slug: "b".into(),
+            week: 1,
+            performed_on: Some(date.into()),
+            date_precision: precision,
+            best_weight: 100.0,
+            best_reps: 5.0,
+            best_rir: 1.0,
+            e1rm: 120.0,
+            e5rm: 102.9,
+            top_weight: 100.0,
+            top_reps: 5.0,
+            hard_sets: 1,
+            pr: false,
+            since_best: 0,
+            stalled: false,
+            pct_from_baseline: 0.0,
+        }
+    }
+
+    #[test]
+    fn week_dated_sessions_spread_across_their_week() {
+        let d = day_of("2026-01-05").unwrap();
+        let days = plot_days(&[
+            session("2026-01-05", DatePrecision::Week),
+            session("2026-01-05", DatePrecision::Week),
+            session("2026-01-12", DatePrecision::Week),
+            session("2026-01-20", DatePrecision::Exact),
+            session("2026-01-20", DatePrecision::Exact),
+        ]);
+        assert_eq!(
+            days,
+            [Some(d), Some(d + 3.5), Some(d + 7.0), Some(d + 15.0), Some(d + 15.0)]
+        );
+    }
 }
