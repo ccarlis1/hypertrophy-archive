@@ -1,4 +1,50 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
+
+/// Joint actions keyed by their `name` slug.
+pub type Archive = BTreeMap<String, Exercise>;
+
+/// Load every `*.json` joint action under `dir` (saved as `<muscle>/<name>.json`).
+/// Two files with the same `name` slug is an error. A missing `dir` is an empty archive.
+pub fn load_archive(dir: &Path) -> Result<Archive, String> {
+    let mut archive = Archive::new();
+    let mut seen: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
+    if !dir.exists() {
+        return Ok(archive);
+    }
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let entries = fs::read_dir(&d).map_err(|e| format!("read {}: {e}", d.display()))?;
+        for entry in entries {
+            let path = entry.map_err(|e| format!("read {}: {e}", d.display()))?.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let text =
+                fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+            let exercise: Exercise = serde_json::from_str(&text)
+                .map_err(|e| format!("parse {}: {e}", path.display()))?;
+            if let Some(first) = seen.get(&exercise.name) {
+                return Err(format!(
+                    "joint action slug {:?} is used by both {} and {}",
+                    exercise.name,
+                    first.display(),
+                    path.display()
+                ));
+            }
+            seen.insert(exercise.name.clone(), path);
+            archive.insert(exercise.name.clone(), exercise);
+        }
+    }
+    Ok(archive)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Exercise {
@@ -213,5 +259,43 @@ mod tests {
         assert_eq!(exercise.target_muscle_groups[0].muscle_divisions[0].bias, BiasLevel::None);
         assert_eq!(exercise.target_muscle_groups[0].muscle_divisions[1].bias, BiasLevel::Light);
         assert_eq!(exercise.joints_involved.joints[1].angle_final, Some(180));
+    }
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("ha_archive_{tag}_{nanos}"))
+    }
+
+    fn write_exercise(dir: &Path, folder: &str, file: &str, name: &str) {
+        let mut ex = sample_exercise();
+        ex.name = name.to_string();
+        let d = dir.join(folder);
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join(file), serde_json::to_string(&ex).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn load_archive_reads_nested_files_by_slug() {
+        let dir = temp_dir("ok");
+        write_exercise(&dir, "chest", "press.json", "chest_press");
+        write_exercise(&dir, "triceps", "pushdown.json", "pushdown");
+        fs::write(dir.join("README.txt"), "not json").unwrap();
+        let archive = load_archive(&dir).unwrap();
+        assert_eq!(archive.keys().collect::<Vec<_>>(), ["chest_press", "pushdown"]);
+        assert!(load_archive(&dir.join("missing")).unwrap().is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn load_archive_rejects_duplicate_slugs() {
+        let dir = temp_dir("dup");
+        write_exercise(&dir, "chest", "a.json", "chest_press");
+        write_exercise(&dir, "shoulders", "b.json", "chest_press");
+        let err = load_archive(&dir).unwrap_err();
+        assert!(err.contains("chest_press"), "{err}");
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

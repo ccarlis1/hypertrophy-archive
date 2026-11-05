@@ -400,7 +400,7 @@ pub fn import_grouped(
         }
     }
 
-    report.outliers = find_outliers(db, 0.40)?;
+    report.outliers = find_outliers(db, crate::metrics::OUTLIER_RATIO)?;
 
     if opts.dry_run {
         tx.rollback()
