@@ -128,6 +128,20 @@ impl ProgressUi {
             if ui.button("Reload").clicked() {
                 self.load(db, data_dir);
             }
+            ui.separator();
+            ui.label("Epley c")
+                .on_hover_text("e1RM = w × (1 + r/c). 30 is Epley's value; use your fitted one here.");
+            ui.add(
+                egui::DragValue::new(&mut self.params.epley_c)
+                    .clamp_range(10.0..=60.0)
+                    .speed(0.1)
+                    .max_decimals(1),
+            );
+            if self.params.epley_c != metrics::Params::default().epley_c
+                && ui.small_button("reset").clicked()
+            {
+                self.params.epley_c = metrics::Params::default().epley_c;
+            }
         });
         if let Some(e) = &self.error {
             ui.colored_label(Color32::RED, e);

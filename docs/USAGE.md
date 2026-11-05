@@ -120,8 +120,10 @@ variants, because their weights aren't comparable.
 
 ### Progress: long-term charts
 The data loads when you open the tab. Click **Reload** after logging, importing or
-linking variants. Sessions dated only to the week are spread evenly across that week on
-the time charts, so they don't stack on one date. There are three views:
+linking variants. **Epley c** sets the constant in the e1RM formula (30 by default, see
+below), and every view updates as you change it. Sessions dated only to the week are
+spread evenly across that week on the time charts, so they don't stack on one date.
+There are three views:
 - **Variant:** e1RM over time, with e5RM next to it (untick **e5RM** to hide it). PRs are
   yellow diamonds and stalled sessions are red dots. Below the chart, **Sessions** lists
   the top set, best set and % change from baseline, and **Rep PRs** shows the most reps
@@ -137,7 +139,7 @@ the time charts, so they don't stack on one date. There are three views:
   counts as 3, and a set with no RIR counts as 0 (taken to failure).
 - **e1RM** = `w × (1 + r/30)`, from the session's best set. **e5RM** =
   `e1RM / (1 + 5/30)`, so a set with `r = 5` gives e5RM = `w`. The constant 30 can be
-  changed with `ha --epley-c`.
+  changed with `ha --epley-c` or **Epley c** in the Progress tab.
 - **PR:** a session's e1RM beats every earlier session of that variant. The first
   session is the baseline, not a PR.
 - **Stalled:** 4 or more sessions in a row without a new e1RM best.
