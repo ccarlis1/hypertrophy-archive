@@ -14,6 +14,7 @@ pub enum MainTab {
     Log,
     History,
     Variants,
+    Progress,
 }
 
 pub struct LoggerUi {
@@ -164,6 +165,7 @@ impl LoggerUi {
                 ("Log", MainTab::Log),
                 ("History", MainTab::History),
                 ("Variants", MainTab::Variants),
+                ("Progress", MainTab::Progress),
             ] {
                 let selected = self.main_tab == tab;
                 let text = if selected {

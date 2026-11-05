@@ -1,5 +1,6 @@
 mod gui;
 mod logger_ui;
+mod progress_ui;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {

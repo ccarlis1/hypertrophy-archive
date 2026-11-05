@@ -1,4 +1,5 @@
 use crate::logger_ui::{LoggerUi, MainTab};
+use crate::progress_ui::ProgressUi;
 use hypertrophy_archive::models::*;
 use eframe::egui;
 use egui::{Color32, RichText, Ui, InnerResponse};
@@ -29,6 +30,7 @@ pub struct HypertrophyApp {
     save_filename: String,
     new_muscle_selection: Option<String>,
     logger: LoggerUi,
+    progress: ProgressUi,
 }
 
 enum Tab {
@@ -186,6 +188,7 @@ impl Default for HypertrophyApp {
             save_filename: String::new(),
             new_muscle_selection: None,
             logger,
+            progress: ProgressUi::default(),
         }
     }
 }
@@ -289,6 +292,11 @@ impl eframe::App for HypertrophyApp {
                     });
                     ui.separator();
                     ui.label(RichText::new(&self.status_message).size(16.0));
+                }
+                MainTab::Progress => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.progress.show(ui, self.logger.db.as_ref(), &self.data_dir);
+                    });
                 }
             }
         });
