@@ -200,6 +200,7 @@ Everything you correct by hand lives in `overrides/`, so a re-run reproduces it.
 |---|---|
 | `overrides/titles.toml` | A note with an unusual or wrong title: set its block and week by note id |
 | `overrides/lines.toml` | A line the parser misreads: give replacement text to parse, or `accept` it as is. These resolve items in the review list |
+| `overrides/entries.toml` | Single entries to leave out of the metrics (e.g. a set of half reps), matched by note id and the entry's line. Step 3 marks them excluded |
 | `overrides/aliases.toml` | Exercise grouping. Start from `aliases.suggested.toml`, which step 3 writes. Mark each variant `confirmed`, `merge` it into another (`merge_into`), or `remove` it. `display` sets its name and `weight_factor` scales its weights when merging |
 
 The parser lists lines it can't fully trust as **review items**, with the note title and

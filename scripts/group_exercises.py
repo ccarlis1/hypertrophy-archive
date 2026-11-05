@@ -30,6 +30,14 @@ Copy it to overrides/aliases.toml and review it there. Fields read from each var
     display = "Lat Pulldown"                   name for the final variant
 A merged variant goes to the gym most of its entries are from (ties: the most recent).
 
+overrides/entries.toml (optional) excludes single entries without touching their name's
+variant, e.g. one set of half reps:
+    [[exclude]]
+    note = "x-coredata://.../p123"             the week's note id (optional)
+    raw = "Preacher Machine (half reps) - ..."  the entry's line, exactly as logged
+    reason = "half reps"
+An excluded entry stays in the data with "excluded": true and no variant.
+
 When overrides/aliases.toml exists, also writes:
     exports/grouped.json      parsed.json with "variant" (or "excluded") on every tracked entry
     overrides/variants.toml   the final variants, for confirming
@@ -139,13 +147,32 @@ def top_weight(entry):
     return max(ws) if ws else None
 
 
-def collect(parsed):
+def load_exclusions(path=Path("overrides/entries.toml")):
+    if not path.exists():
+        return []
+    with path.open("rb") as f:
+        return tomllib.load(f).get("exclude", [])
+
+
+def excluded_by(rule, cycle, entry):
+    return rule["raw"] == entry["raw"] and rule.get("note", cycle["note_id"]) == cycle["note_id"]
+
+
+def collect(parsed, exclusions=()):
+    """Tracked entries as rows. Entries matching an exclusion are marked excluded and
+    left out, so they never shape a variant."""
     labels = {b["slug"]: b["label"] for b in parsed["blocks"]}
     rows = []
+    unused = list(exclusions)
     for c in parsed["cycles"]:
         for s in c["sessions"]:
             for e in s["entries"]:
                 if not e["tracked"]:
+                    continue
+                hit = [r for r in exclusions if excluded_by(r, c, e)]
+                if hit:
+                    e["excluded"], e["variant"] = True, None
+                    unused = [r for r in unused if r not in hit]
                     continue
                 norm = normalize(e["name"])
                 fam, core = family_of(norm)
@@ -161,6 +188,8 @@ def collect(parsed):
                              "date": c["started_on"], "weight": top_weight(e), "entry": e,
                              "gym": gym_of(labels.get(c["block"])),
                              "plates": any("plate" in (x["weight_note"] or "") for x in e["sets"])})
+    for r in unused:
+        print(f"warning: overrides/entries.toml exclusion matched no entry: {r['raw']!r}")
     return rows
 
 
@@ -340,7 +369,10 @@ def write_resolved(parsed, final, removed, rows):
 
 def main(argv):
     parsed = json.loads(Path(argv[0] if argv else "exports/parsed.json").read_text())
-    rows = collect(parsed)
+    exclusions = load_exclusions()
+    rows = collect(parsed, exclusions)
+    if exclusions:
+        print(f"{len(exclusions)} entries excluded by overrides/entries.toml")
     variants = assign(rows)
     rules_path = Path("overrides/aliases.toml")
     if rules_path.exists():
