@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::log::{
     Alias, AliasStatus, Block, Cycle, DatePrecision, Entry, EntryDetail, GroupedSeed, LastPerformance,
     NewBlock, NewCycle, NewEntry, NewSession, NewSet, NewVariant, Session, SessionDetail,
-    SessionSummary, SetLog, Source, Split, Variant,
+    SessionSummary, SetLog, SetRow, Source, Split, Variant,
 };
 
 const MIGRATION_001: &str = include_str!("../migrations/001_init.sql");
@@ -696,6 +696,54 @@ impl Db {
             .map_err(|e| format!("list sets: {e}"))
     }
 
+    /// Every set of every non-excluded entry, in training order: by date, then block,
+    /// week, day and position. Sessions dated to the same week keep their note order.
+    pub fn set_rows(&self) -> Result<Vec<SetRow>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT sl.id, sl.entry_id, sl.set_number, sl.weight, sl.weight_inferred, sl.weight_note,
+                        sl.reps, sl.rir_low, sl.rir_high, sl.logged, sl.comment, sl.raw,
+                        b.slug, b.label, b.split, c.id, c.week, s.id, s.performed_on, s.day_label,
+                        e.position, v.id, v.slug, v.display, v.family, v.gym, v.joint_action
+                 FROM set_log sl
+                 JOIN entry e ON e.id = sl.entry_id
+                 JOIN session s ON s.id = e.session_id
+                 JOIN cycle c ON c.id = s.cycle_id
+                 JOIN block b ON b.id = c.block_id
+                 LEFT JOIN variant v ON v.id = e.variant_id
+                 WHERE e.excluded = 0
+                 ORDER BY COALESCE(s.performed_on, c.started_on, b.started_on, ''), b.id, c.week,
+                          s.\"index\", s.id, e.position, e.id, sl.set_number, sl.id",
+            )
+            .map_err(|e| format!("set rows: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let split_s: String = row.get(14)?;
+                Ok(SetRow {
+                    set: map_set(row)?,
+                    block_slug: row.get(12)?,
+                    block_label: row.get(13)?,
+                    split: Split::parse(&split_s).unwrap_or(Split::Other),
+                    cycle_id: row.get(15)?,
+                    week: row.get(16)?,
+                    session_id: row.get(17)?,
+                    performed_on: row.get(18)?,
+                    day_label: row.get(19)?,
+                    position: row.get(20)?,
+                    variant_id: row.get(21)?,
+                    variant_slug: row.get(22)?,
+                    variant_display: row.get(23)?,
+                    family: row.get(24)?,
+                    gym: row.get(25)?,
+                    joint_action: row.get(26)?,
+                })
+            })
+            .map_err(|e| format!("set rows: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("set rows: {e}"))
+    }
+
     pub fn last_performance(&self, variant_id: i64) -> Result<Option<LastPerformance>, String> {
         let row = self
             .conn
@@ -1218,6 +1266,106 @@ mod tests {
 
         let found = db.search_variants("smith").unwrap();
         assert!(found.iter().any(|v| v.slug == "flat_smith_press"));
+    }
+
+    fn simple_set(set_number: i32, weight: f64, reps: f64) -> NewSet {
+        NewSet {
+            set_number,
+            weight: Some(weight),
+            weight_inferred: false,
+            weight_note: None,
+            reps: Some(reps),
+            rir_low: Some(1.0),
+            rir_high: Some(1.0),
+            logged: true,
+            comment: None,
+            raw: None,
+        }
+    }
+
+    fn simple_entry(session_id: i64, variant_id: i64, position: i32, excluded: bool) -> NewEntry {
+        NewEntry {
+            session_id,
+            variant_id: Some(variant_id),
+            position,
+            tracked: true,
+            name: None,
+            name_raw: "x".into(),
+            qualifiers: Vec::new(),
+            untracked_sets: None,
+            settings: None,
+            comment: None,
+            raw: None,
+            excluded,
+        }
+    }
+
+    #[test]
+    fn set_rows_are_in_training_order_and_skip_excluded() {
+        let db = temp_db();
+        let block_id = db
+            .create_block(&NewBlock {
+                slug: "b".into(),
+                name: "B".into(),
+                split: Split::Other,
+                label: Some("home".into()),
+                started_on: None,
+            })
+            .unwrap();
+        let variant_id = db
+            .create_variant(&NewVariant {
+                slug: "curl".into(),
+                display: "Curl".into(),
+                family: None,
+                gym: None,
+                status: AliasStatus::Confirmed,
+                joint_action: Some("elbow_flexion".into()),
+                equipment: None,
+                load_unit: "lb".into(),
+                default_settings: None,
+            })
+            .unwrap();
+        // Week 2 is inserted first but trained later.
+        let mut sessions = Vec::new();
+        for (week, date) in [(2, "2026-01-08"), (1, "2026-01-01")] {
+            let cycle_id = db.get_or_create_cycle(block_id, week, None, Source::App).unwrap().id;
+            let session_id = db
+                .create_session(&NewSession {
+                    cycle_id,
+                    day_number: None,
+                    day_label: None,
+                    comment: None,
+                    header_raw: None,
+                    implicit: false,
+                    index: 0,
+                    notes: Vec::new(),
+                    performed_on: Some(date.into()),
+                    date_precision: DatePrecision::Week,
+                    source: Source::App,
+                })
+                .unwrap();
+            sessions.push(session_id);
+        }
+        let (late, early) = (sessions[0], sessions[1]);
+        db.add_entry_with_sets(
+            &simple_entry(late, variant_id, 1, false),
+            &[simple_set(2, 110.0, 5.0), simple_set(1, 100.0, 5.0)],
+        )
+        .unwrap();
+        db.add_entry_with_sets(&simple_entry(late, variant_id, 2, true), &[simple_set(1, 999.0, 1.0)])
+            .unwrap();
+        db.add_entry_with_sets(&simple_entry(early, variant_id, 1, false), &[simple_set(1, 90.0, 5.0)])
+            .unwrap();
+
+        let rows = db.set_rows().unwrap();
+        let got: Vec<(i64, i32, f64)> = rows
+            .iter()
+            .map(|r| (r.session_id, r.set.set_number, r.set.weight.unwrap()))
+            .collect();
+        assert_eq!(got, vec![(early, 1, 90.0), (late, 1, 100.0), (late, 2, 110.0)]);
+        assert_eq!(rows[0].week, 1);
+        assert_eq!(rows[0].joint_action.as_deref(), Some("elbow_flexion"));
+        assert_eq!(rows[0].block_label.as_deref(), Some("home"));
     }
 
     #[test]

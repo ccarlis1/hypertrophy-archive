@@ -322,6 +322,27 @@ pub struct EntryDetail {
     pub sets: Vec<SetLog>,
 }
 
+/// One set with its block, cycle, session and variant, for metrics and CSV export.
+#[derive(Debug, Clone)]
+pub struct SetRow {
+    pub block_slug: String,
+    pub block_label: Option<String>,
+    pub split: Split,
+    pub cycle_id: i64,
+    pub week: i32,
+    pub session_id: i64,
+    pub performed_on: Option<String>,
+    pub day_label: Option<String>,
+    pub position: i32,
+    pub variant_id: Option<i64>,
+    pub variant_slug: Option<String>,
+    pub variant_display: Option<String>,
+    pub family: Option<String>,
+    pub gym: Option<String>,
+    pub joint_action: Option<String>,
+    pub set: SetLog,
+}
+
 /// Minimal seed shape from `exports/grouped.json` (variants only).
 #[derive(Debug, Clone, Deserialize)]
 pub struct GroupedSeed {
