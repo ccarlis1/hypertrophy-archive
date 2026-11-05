@@ -26,6 +26,8 @@ joint action  (JSON in data/)        elbow_flexion_preacher
   - [Log: record a workout](#log-record-a-workout)
   - [History: look back](#history-look-back)
   - [Variants: manage machines and setups](#variants-manage-machines-and-setups)
+  - [Progress: long-term charts](#progress-long-term-charts)
+- [How progress is measured](#how-progress-is-measured)
 - [The `ha` command line](#the-ha-command-line)
 - [Importing Apple Notes history](#importing-apple-notes-history)
 - [Backups, undo and safe testing](#backups-undo-and-safe-testing)
@@ -56,7 +58,8 @@ Two ways to use a different database:
 - `ha --db /path/to/file.db …` picks a file for one command.
 
 ## The app window
-The tabs across the top are **Editor**, **Log**, **History** and **Variants**. The
+The tabs across the top are **Editor**, **Log**, **History**, **Variants** and
+**Progress**. The
 status line shows the result of the last action ("saved", errors, and so on).
 
 ### Editor: write a joint action
@@ -115,6 +118,35 @@ variants, because their weights aren't comparable.
   **gym**, **joint_action** (the slug of a joint action from the Editor) and
   **default_settings** (e.g. "seat 3, pad 2"). Then click **Save variant**.
 
+### Progress: long-term charts
+The data loads when you open the tab. Click **Reload** after logging, importing or
+linking variants. There are three views:
+- **Variant:** e1RM over time, with e5RM next to it (untick **e5RM** to hide it). PRs are
+  yellow diamonds and stalled sessions are red dots. Below the chart, **Sessions** lists
+  the top set, best set and % change from baseline, and **Rep PRs** shows the most reps
+  done at each weight. The filter box narrows the variant list.
+- **Joint action:** one line per linked variant, as a % change from that variant's own
+  baseline, so machines with different load schemes can be compared.
+- **Sets per muscle:** pick a week and see its hard sets per muscle. Tick **Divisions**
+  to split them by division. Hard sets from variants with no joint action are listed
+  under the chart but not counted.
+
+## How progress is measured
+- **Reps to failure:** `r = reps + RIR midpoint`. A range like 1–2 counts as 1.5, "3+"
+  counts as 3, and a set with no RIR counts as 0 (taken to failure).
+- **e1RM** = `w × (1 + r/30)`, from the session's best set. **e5RM** =
+  `e1RM / (1 + 5/30)`, so a set with `r = 5` gives e5RM = `w`. The constant 30 can be
+  changed with `ha --epley-c`.
+- **PR:** a session's e1RM beats every earlier session of that variant. The first
+  session is the baseline, not a PR.
+- **Stalled:** 4 or more sessions in a row without a new e1RM best.
+- **Baseline:** the median e1RM of a variant's first 3 sessions.
+- **Hard set:** a logged set with reps and an RIR midpoint of 2 or less. Untracked
+  entries don't count. Each hard set counts 1 toward the joint action's primary muscle
+  and 0.5 toward each other muscle, and the same to each active division.
+- Sessions with no set that has both a weight and reps (bodyweight, all blank) have no
+  strength estimate.
+
 ## The `ha` command line
 | Command | What it does |
 |---|---|
@@ -123,8 +155,14 @@ variants, because their weights aren't comparable.
 | `ha variants link <variant> <joint_action>` | Link a variant to a joint action |
 | `ha variants seed exports/grouped.json` | Load variants and aliases without importing history |
 | `ha import exports/grouped.json` | Import Apple Notes history (next section) |
+| `ha stats <variant>` | Session-by-session e1RM, e5RM, top set, PRs, stall flag and rep PRs. Takes a slug or a search term that matches one variant |
+| `ha stats <joint_action>` | % change from baseline for every variant linked to it |
+| `ha stats <muscle>` | Weekly hard sets for a muscle (e.g. `"elbow flexors"`), with divisions |
+| `ha cycle <block> <week>` | One week's hard sets per muscle, PRs and stalls |
+| `ha export csv [-o file]` | One row per set, with the session's e1RM and e5RM for that variant. Write it under `exports/` so it stays out of git |
 
-Every command takes `--db <path>`. `ha --help` and `ha <command> --help` list all options.
+Every command takes `--db <path>`, `--data <folder>` (the joint actions, default `data`)
+and `--epley-c <c>`. `ha --help` and `ha <command> --help` list all options.
 
 ## Importing Apple Notes history
 This is for workout logs written in Apple Notes, one note per week, with titles like
