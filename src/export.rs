@@ -8,14 +8,15 @@ use crate::metrics::{self, Params, SessionStrength};
 
 const HEADER: &[&str] = &[
     "block", "block_label", "split", "cycle_id", "week", "session_id", "performed_on",
-    "day_label", "position", "variant", "variant_display", "family", "gym", "joint_action",
-    "set_number", "logged", "weight", "weight_inferred", "reps", "rir_low", "rir_high",
+    "date_precision", "day_label", "position", "variant", "variant_display", "family", "gym",
+    "joint_action", "set_number", "logged", "weight", "weight_inferred", "weight_outlier", "reps", "rir_low", "rir_high",
     "rir_mid", "reps_to_failure", "set_e1rm", "hard", "session_e1rm", "session_e5rm",
     "session_pr", "comment",
 ];
 
 /// Write every set as CSV. A missing RIR is left blank in `rir_low`/`rir_high` but
-/// counts as 0 in `rir_mid` and the estimates.
+/// counts as 0 in `rir_mid` and the estimates. `weight_outlier` marks a weight more than
+/// `metrics::OUTLIER_RATIO` from its variant's median, the importer's outlier rule.
 pub fn write_csv(rows: &[SetRow], p: &Params, out: &mut impl Write) -> std::io::Result<usize> {
     let mut by_session: HashMap<(i64, i64), SessionStrength> = HashMap::new();
     for v in metrics::variants_in(rows) {
@@ -24,8 +25,10 @@ pub fn write_csv(rows: &[SetRow], p: &Params, out: &mut impl Write) -> std::io::
         }
     }
 
+    let outliers = metrics::weight_outliers(rows, metrics::OUTLIER_RATIO);
+
     writeln!(out, "{}", HEADER.join(","))?;
-    for r in rows {
+    for (r, outlier) in rows.iter().zip(outliers) {
         let set = &r.set;
         let session = r
             .variant_id
@@ -38,6 +41,7 @@ pub fn write_csv(rows: &[SetRow], p: &Params, out: &mut impl Write) -> std::io::
             r.week.to_string(),
             r.session_id.to_string(),
             opt(&r.performed_on),
+            r.date_precision.as_str().to_string(),
             opt(&r.day_label),
             r.position.to_string(),
             opt(&r.variant_slug),
@@ -49,6 +53,7 @@ pub fn write_csv(rows: &[SetRow], p: &Params, out: &mut impl Write) -> std::io::
             bool01(set.logged),
             num(set.weight),
             bool01(set.weight_inferred),
+            bool01(outlier),
             num(set.reps),
             num(set.rir_low),
             num(set.rir_high),
@@ -94,7 +99,7 @@ fn quote(field: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::log::{SetLog, Split};
+    use crate::log::{DatePrecision, SetLog, Split};
 
     fn row(session: i64, weight: f64, reps: f64, comment: Option<&str>) -> SetRow {
         SetRow {
@@ -105,6 +110,7 @@ mod tests {
             week: 1,
             session_id: session,
             performed_on: Some("2026-01-01".into()),
+            date_precision: DatePrecision::Week,
             day_label: Some("FB 1".into()),
             position: 1,
             variant_id: Some(7),
@@ -146,7 +152,7 @@ mod tests {
         // Best set is 90×10 to failure: e1RM 120, e5RM 102.857.
         assert_eq!(
             lines[1],
-            "b,\"home, gym\",full_body,1,1,1,2026-01-01,FB 1,1,curl,Curl,,,,1,1,100,0,5,,,0,5,116.667,1,120,102.857,0,\"said \"\"easy\"\"\""
+            "b,\"home, gym\",full_body,1,1,1,2026-01-01,week,FB 1,1,curl,Curl,,,,1,1,100,0,0,5,,,0,5,116.667,1,120,102.857,0,\"said \"\"easy\"\"\""
         );
         assert!(lines[2].contains(",120,102.857,0,"));
     }

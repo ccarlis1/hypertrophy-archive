@@ -159,7 +159,7 @@ linking variants. There are three views:
 | `ha stats <joint_action>` | % change from baseline for every variant linked to it |
 | `ha stats <muscle>` | Weekly hard sets for a muscle (e.g. `"elbow flexors"`), with divisions |
 | `ha cycle <block> <week>` | One week's hard sets per muscle, PRs and stalls |
-| `ha export csv [-o file]` | One row per set, with the session's e1RM and e5RM for that variant. Write it under `exports/` so it stays out of git |
+| `ha export csv [-o file]` | One row per set, with the session's e1RM and e5RM for that variant, the session's `date_precision`, and `weight_outlier` (the importer's ±40%-of-median rule). Write it under `exports/` so it stays out of git |
 
 Every command takes `--db <path>`, `--data <folder>` (the joint actions, default `data`)
 and `--epley-c <c>`. `ha --help` and `ha <command> --help` list all options.

@@ -6,13 +6,17 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::log::{SetLog, SetRow};
+use crate::log::{DatePrecision, SetLog, SetRow};
 use crate::models::{Archive, Exercise};
 
 /// Share of a hard set credited to a joint action's primary muscle.
 pub const PRIMARY_SHARE: f64 = 1.0;
 /// Share of a hard set credited to each secondary muscle.
 pub const SECONDARY_SHARE: f64 = 0.5;
+
+/// A set weight this far (as a share) from its variant's median is an outlier. The
+/// importer's report uses the same rule.
+pub const OUTLIER_RATIO: f64 = 0.40;
 
 /// e1RM changes smaller than this (lb) are not a gain.
 const GAIN_EPSILON: f64 = 1e-6;
@@ -88,6 +92,7 @@ pub struct SessionStrength {
     pub block_slug: String,
     pub week: i32,
     pub performed_on: Option<String>,
+    pub date_precision: DatePrecision,
     /// The set with the highest e1RM.
     pub best_weight: f64,
     pub best_reps: f64,
@@ -149,6 +154,7 @@ pub fn variant_history(rows: &[SetRow], variant_id: i64, p: &Params) -> Vec<Sess
             block_slug: first.block_slug.clone(),
             week: first.week,
             performed_on: first.performed_on.clone(),
+            date_precision: first.date_precision,
             best_weight: best_set.weight.unwrap_or(0.0),
             best_reps: best_set.reps.unwrap_or(0.0),
             best_rir: rir_mid(best_set.rir_low, best_set.rir_high),
@@ -171,6 +177,44 @@ pub fn variant_history(rows: &[SetRow], variant_id: i64, p: &Params) -> Vec<Sess
     out
 }
 
+/// For each row, whether its weight is more than `ratio` from the median weight of its
+/// variant. Only logged sets with a weight that wasn't inferred count, as in the
+/// importer's outlier report.
+pub fn weight_outliers(rows: &[SetRow], ratio: f64) -> Vec<bool> {
+    let counted = |r: &SetRow| {
+        r.variant_id.is_some() && r.set.logged && !r.set.weight_inferred && r.set.weight.is_some()
+    };
+    let mut weights: HashMap<i64, Vec<f64>> = HashMap::new();
+    for r in rows.iter().filter(|r| counted(r)) {
+        weights.entry(r.variant_id.unwrap()).or_default().push(r.set.weight.unwrap());
+    }
+    let medians: HashMap<i64, f64> = weights
+        .into_iter()
+        .map(|(v, mut w)| {
+            w.sort_by(f64::total_cmp);
+            (v, median_sorted(&w))
+        })
+        .collect();
+    rows.iter()
+        .map(|r| {
+            if !counted(r) {
+                return false;
+            }
+            let m = medians[&r.variant_id.unwrap()];
+            m > 0.0 && (r.set.weight.unwrap() - m).abs() / m > ratio
+        })
+        .collect()
+}
+
+fn median_sorted(sorted: &[f64]) -> f64 {
+    let n = sorted.len();
+    if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    }
+}
+
 /// Median e1RM of the first `baseline_sessions` sessions.
 pub fn baseline(history: &[SessionStrength], p: &Params) -> Option<f64> {
     let n = p.baseline_sessions.max(1).min(history.len());
@@ -179,11 +223,7 @@ pub fn baseline(history: &[SessionStrength], p: &Params) -> Option<f64> {
     }
     let mut first: Vec<f64> = history[..n].iter().map(|s| s.e1rm).collect();
     first.sort_by(f64::total_cmp);
-    Some(if n % 2 == 1 {
-        first[n / 2]
-    } else {
-        (first[n / 2 - 1] + first[n / 2]) / 2.0
-    })
+    Some(median_sorted(&first))
 }
 
 /// Rows of one variant, grouped by session in training order.
@@ -472,6 +512,7 @@ mod tests {
             week: cycle as i32,
             session_id: session,
             performed_on: Some(format!("2026-01-{:02}", session)),
+            date_precision: DatePrecision::Week,
             day_label: None,
             position: 1,
             variant_id: Some(variant),
@@ -712,6 +753,22 @@ mod tests {
 
         let biceps = muscle_weekly(&weeks, "elbow flexors");
         assert_eq!(biceps.iter().map(|(_, s)| *s).collect::<Vec<_>>(), [2.0, 1.0]);
+    }
+
+    #[test]
+    fn weight_outliers_use_each_variants_median() {
+        let mut inferred = ws(300.0, 5.0, 1.0);
+        inferred.weight_inferred = true;
+        let rows = vec![
+            row(1, 1, 1, ws(100.0, 5.0, 1.0)),
+            row(2, 1, 1, ws(110.0, 5.0, 1.0)),
+            row(3, 1, 1, ws(160.0, 5.0, 1.0)),
+            row(4, 1, 1, inferred),
+            // Variant 2 has its own median, so 300 isn't an outlier there.
+            row(1, 1, 2, ws(300.0, 5.0, 1.0)),
+        ];
+        // Median of 100, 110, 160 is 110; 160 is 45% above it.
+        assert_eq!(weight_outliers(&rows, OUTLIER_RATIO), [false, false, true, false, false]);
     }
 
     #[test]

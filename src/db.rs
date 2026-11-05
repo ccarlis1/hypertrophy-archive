@@ -705,7 +705,7 @@ impl Db {
                 "SELECT sl.id, sl.entry_id, sl.set_number, sl.weight, sl.weight_inferred, sl.weight_note,
                         sl.reps, sl.rir_low, sl.rir_high, sl.logged, sl.comment, sl.raw,
                         b.slug, b.label, b.split, c.id, c.week, s.id, s.performed_on, s.day_label,
-                        e.position, v.id, v.slug, v.display, v.family, v.gym, v.joint_action
+                        e.position, v.id, v.slug, v.display, v.family, v.gym, v.joint_action, s.date_precision
                  FROM set_log sl
                  JOIN entry e ON e.id = sl.entry_id
                  JOIN session s ON s.id = e.session_id
@@ -720,6 +720,7 @@ impl Db {
         let rows = stmt
             .query_map([], |row| {
                 let split_s: String = row.get(14)?;
+                let precision_s: String = row.get(27)?;
                 Ok(SetRow {
                     set: map_set(row)?,
                     block_slug: row.get(12)?,
@@ -729,6 +730,8 @@ impl Db {
                     week: row.get(16)?,
                     session_id: row.get(17)?,
                     performed_on: row.get(18)?,
+                    date_precision: DatePrecision::parse(&precision_s)
+                        .unwrap_or(DatePrecision::Unknown),
                     day_label: row.get(19)?,
                     position: row.get(20)?,
                     variant_id: row.get(21)?,

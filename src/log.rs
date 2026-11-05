@@ -332,6 +332,7 @@ pub struct SetRow {
     pub week: i32,
     pub session_id: i64,
     pub performed_on: Option<String>,
+    pub date_precision: DatePrecision,
     pub day_label: Option<String>,
     pub position: i32,
     pub variant_id: Option<i64>,
